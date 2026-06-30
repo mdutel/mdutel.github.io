@@ -1,0 +1,1366 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan vierge — Métro de Paris</title>
+<style>
+  :root{
+    --bg: #0d1117;
+    --panel: #f7f5ef;
+    --panel-line: #1a1a1a;
+    --ink: #14140f;
+    --muted: #6b6b63;
+    --ok: #2f8f5b;
+    --bad: #c1453a;
+    --review: #E8A33D;
+    --accent: #f7f5ef;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--accent);
+    font-family: "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body{
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 24px 14px 60px;
+  }
+  .wrap{ width:100%; max-width: 1320px; }
+
+  /* header */
+  .masthead{
+    display:flex; align-items:baseline; justify-content:space-between;
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 10px; margin-bottom: 18px;
+  }
+  .masthead h1{
+    font-size: 15px; letter-spacing: 0.18em; text-transform:uppercase;
+    font-weight: 700; margin:0;
+  }
+  .masthead .sub{
+    font-size: 11px; letter-spacing: 0.1em; color:#9a9a92; text-transform:uppercase;
+  }
+
+  /* line tabs */
+  .tabs{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .tab{
+    border: none; cursor:pointer; padding: 9px 16px;
+    font-weight:700; font-size:13px; letter-spacing:0.04em;
+    border-radius: 999px; color:#fff; opacity:0.45;
+    transition: opacity .15s, transform .1s;
+  }
+  .tab.active{ opacity:1; box-shadow: 0 0 0 2px rgba(255,255,255,0.6) inset; }
+  .tab:active{ transform: scale(0.97); }
+
+  /* mode toggle */
+  .modes{ display:flex; gap:8px; margin-bottom:20px; }
+  .mode-btn{
+    flex:1; background:#1c2128; color:#cfd3da; border:1px solid #2a313c;
+    padding:10px 12px; border-radius:8px; font-size:12px; letter-spacing:0.05em;
+    text-transform:uppercase; font-weight:700; cursor:pointer;
+  }
+  .mode-btn.active{ background:#cfd3da; color:#11151a; border-color:#cfd3da; }
+
+  /* options row (correspondence mode segmented control) */
+  .opts-row{ display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
+  .opts-label{ font-size:12px; letter-spacing:0.04em; color:#cfd3da; font-weight:700; text-transform:uppercase; }
+  .seg{ display:inline-flex; border:1px solid #2a313c; border-radius:8px; overflow:hidden; }
+  .seg button{
+    background:#1c2128; color:#aeb4bd; border:none; cursor:pointer;
+    padding:8px 14px; font-size:12px; font-weight:700; letter-spacing:0.03em;
+    border-right:1px solid #2a313c;
+  }
+  .seg button:last-child{ border-right:none; }
+  .seg button.active{ background:#6FCB9F; color:#0d1117; }
+
+  /* top navigation between views + data tools */
+  .nav{ display:flex; align-items:center; gap:8px; margin-bottom:20px; flex-wrap:wrap; }
+  .nav .nav-btn{
+    background:#1c2128; color:#cfd3da; border:1px solid #2a313c; cursor:pointer;
+    padding:9px 15px; font-size:12px; font-weight:700; letter-spacing:0.04em; border-radius:8px;
+    text-transform:uppercase;
+  }
+  .nav .nav-btn.active{ background:#cfd3da; color:#11151a; border-color:#cfd3da; }
+  .nav .nav-btn.review{ background:#E8A33D; color:#1a1205; border-color:#E8A33D; }
+  .nav .nav-btn.review.active{ background:#E8A33D; color:#1a1205; box-shadow:0 0 0 2px rgba(232,163,61,0.4); }
+  .nav .nav-btn:disabled{ opacity:0.4; cursor:default; }
+  .nav .nav-sep{ flex:1; }
+  .nav .nav-btn.ghost{ background:transparent; color:#8d939b; text-transform:none; letter-spacing:0; font-weight:600; padding:9px 10px; }
+
+  .review-banner{ margin-bottom:12px; }
+  .review-banner .pill{
+    display:inline-block; background:#E8A33D; color:#1a1205; font-weight:800;
+    font-size:11px; letter-spacing:0.06em; text-transform:uppercase; padding:5px 11px; border-radius:999px;
+  }
+
+  /* flagged ("à réviser") marker on the plan */
+  .stop.flagged .dot{ outline:2px solid var(--review); outline-offset:2px; }
+
+  /* line badge (review cards + history) */
+  .line-badge{
+    display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px;
+    border-radius:50%; font-size:12px; font-weight:800; padding:0 5px;
+  }
+
+  /* history list */
+  .hist-wrap{ }
+  .hist-row{
+    display:flex; align-items:center; gap:12px; padding:10px 4px; border-bottom:1px solid #e4e0d3;
+    font-size:13px; color:var(--ink);
+  }
+  .hist-row .when{ color:var(--muted); font-size:11px; min-width:104px; }
+  .hist-row .meta{ flex:1; color:var(--muted); }
+  .hist-row .pct{ font-weight:800; font-size:15px; }
+  .hist-empty{ color:var(--muted); text-align:center; padding:30px 10px; font-size:14px; }
+
+  /* sign panel */
+  .panel{
+    background: var(--panel); color: var(--ink);
+    border-radius: 6px; padding: 18px 16px 22px;
+    box-shadow: 0 18px 40px -16px rgba(0,0,0,0.6);
+    margin-bottom: 18px;
+  }
+  .panel-head{
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;
+  }
+  .panel-head .terminus{
+    font-weight:800; text-transform:uppercase; font-size:13px; letter-spacing:0.02em;
+  }
+  .panel-head .arrow{ color:var(--muted); font-size:12px; }
+
+  .strip-scroll{ padding-bottom: 6px; }
+  .strip{
+    position:relative; display:flex; align-items:flex-start; justify-content:space-between;
+    width: 100%; padding: 0 96px 156px 12px;
+  }
+  .strip .spine{
+    position:absolute; left:34px; right:108px; top: 64px;
+    height: 6px; transform: translateY(-50%);
+    border-radius: 3px; z-index:0;
+  }
+  .stop{
+    position:relative; z-index:1; display:flex; flex-direction:column; align-items:center;
+    flex: 1 1 0; min-width:0;
+  }
+  .stop .dot{
+    width:16px; height:16px; border-radius:50%; background:#fff;
+    border: 3px solid #cfcabb; margin-top: 56px;
+  }
+  .stop.hub .dot{ width:30px; height:30px; margin-top: 49px; border-width:5px; }
+  .stop.current .dot{ box-shadow: 0 0 0 5px rgba(0,0,0,0.10); }
+  .stop.done .dot{ background: var(--ok); border-color: var(--ok); }
+  .stop .label{
+    position:absolute; top: 82px; left: 50%;
+    transform: rotate(45deg); transform-origin: left top;
+    white-space: nowrap; font-size: 10px; line-height:1;
+    color:var(--muted); font-weight:600;
+  }
+  .stop.done .label{ color: var(--ink); }
+  /* correspondence chips sit in a band ABOVE the line, growing upward from just above the dot */
+  .stop .corr-row{
+    position:absolute; left:50%; transform:translateX(-50%); bottom: 33px;
+    display:flex; gap:2px; flex-wrap:wrap; justify-content:center; align-content:flex-end;
+    width:40px; min-height:10px;
+  }
+  .corr-chip-mini{
+    font-size:8px; font-weight:800; color:#fff; border-radius:3px; padding:1px 3px; line-height:1.3;
+  }
+
+  /* question card */
+  .qcard{ margin-top:6px; }
+  .qcard .qlabel{
+    font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--muted);
+    font-weight:700; margin-bottom:8px;
+  }
+  .qcard input[type=text]{
+    width:100%; padding:12px 14px; font-size:16px; border-radius:6px;
+    border: 2px solid #d8d4c4; font-family:inherit; background:#fff;
+  }
+  .qcard input[type=text]:focus{ outline:none; border-color:#14140f; }
+  .row-btn{ display:flex; gap:8px; margin-top:10px; }
+  .btn{
+    border:none; cursor:pointer; padding:11px 18px; border-radius:6px;
+    font-weight:700; font-size:13px; letter-spacing:0.03em;
+  }
+  .btn-primary{ background: var(--ink); color:#fff; }
+  .btn-secondary{ background:transparent; color:var(--ink); text-decoration:underline; padding-left:0; }
+  .feedback{ margin-top:10px; font-weight:700; font-size:13px; }
+  .feedback.ok{ color: var(--ok); }
+  .feedback.bad{ color: var(--bad); }
+
+  /* word bank for melange mode */
+  .bank-filter{
+    width:100%; padding:10px 12px; font-size:14px; border-radius:6px; margin-top:8px;
+    border: 2px solid #d8d4c4; font-family:inherit; background:#fff;
+  }
+  .bank-filter:focus{ outline:none; border-color:#14140f; }
+  .bank{ display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+  .chip{
+    background:#fff; border:2px solid #d8d4c4; padding:8px 12px; border-radius:6px;
+    font-size:12px; font-weight:700; cursor:pointer; color:var(--ink);
+  }
+  .chip.selected{ border-color:var(--ink); background:#ece8db; }
+  .chip:disabled{ opacity:0.3; cursor:default; }
+
+  .stop.slot{ cursor:pointer; }
+  .stop.slot .dot{ border-style:dashed; }
+  .stop.slot.target .dot{ border-color: var(--ink); }
+  .stop.slot.wrong-flash .dot{ background: var(--bad); border-color: var(--bad); }
+
+  /* correspondance chips for picking lines */
+  .corr-options{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .corr-opt{
+    border:2px solid #d8d4c4; background:#fff; color:var(--ink);
+    padding:7px 11px; border-radius:6px; font-size:12px; font-weight:800; cursor:pointer;
+    display:inline-flex; align-items:center; gap:6px;
+  }
+  .corr-swatch{ width:11px; height:11px; border-radius:50%; display:inline-block; flex-shrink:0; box-shadow: 0 0 0 1px rgba(0,0,0,0.12) inset; }
+  .corr-opt.selected{ background:var(--ink); color:#fff; border-color:var(--ink); }
+  .corr-opt.correct{ background:var(--ok); color:#fff; border-color:var(--ok); }
+  .corr-opt.missed{ background:#fff; color:var(--bad); border-color:var(--bad); border-style:dashed; }
+  .corr-opt.extra{ background:var(--bad); color:#fff; border-color:var(--bad); text-decoration:line-through; }
+
+  .score{
+    display:flex; flex-wrap:wrap; gap:6px 22px; font-size:12px; color:#9a9a92;
+    text-transform:uppercase; letter-spacing:0.05em; font-weight:700; margin-bottom:10px;
+  }
+  .score b{ color:#fff; }
+
+  .done-screen{ text-align:center; padding: 20px 8px; }
+  .done-screen .big{ font-size:34px; font-weight:800; margin:6px 0; }
+  .note{ font-size:12px; color:#8d8d85; line-height:1.5; margin-top:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <h1><a href="../" style="color:inherit;text-decoration:none">Plan vierge</a></h1>
+    <div class="sub"><a href="../" style="color:#9a9a92;text-decoration:none">← Accueil</a> · Métro de Paris — pilote</div>
+  </div>
+
+  <div class="nav" id="nav"></div>
+
+  <div id="trainChrome">
+    <div class="tabs" id="tabs"></div>
+    <div class="modes" id="modes"></div>
+    <div class="opts-row" id="optsRow"></div>
+    <div class="review-banner" id="reviewBanner"></div>
+    <div class="score" id="scorebar"></div>
+  </div>
+
+  <div class="panel" id="panel"></div>
+
+  <div class="note" id="note"></div>
+</div>
+
+<script>
+const LINES = {
+  "6": {
+    color: "#6FCB9F",
+    name: "Ligne 6",
+    stations: [
+      {n:"Charles de Gaulle - Étoile", c:["1","2","RER A"]},
+      {n:"Kléber", c:[]},
+      {n:"Boissière", c:[]},
+      {n:"Trocadéro", c:["9"]},
+      {n:"Passy", c:[]},
+      {n:"Bir-Hakeim", c:["RER C"]},
+      {n:"Dupleix", c:[]},
+      {n:"La Motte-Picquet - Grenelle", c:["8","10"]},
+      {n:"Cambronne", c:[]},
+      {n:"Sèvres - Lecourbe", c:[]},
+      {n:"Pasteur", c:["12"]},
+      {n:"Montparnasse - Bienvenüe", c:["4","12","13"]},
+      {n:"Edgar Quinet", c:[]},
+      {n:"Raspail", c:["4"]},
+      {n:"Denfert-Rochereau", c:["4","RER B"]},
+      {n:"Saint-Jacques", c:[]},
+      {n:"Glacière", c:[]},
+      {n:"Corvisart", c:[]},
+      {n:"Place d'Italie", c:["5","7"]},
+      {n:"Nationale", c:[]},
+      {n:"Chevaleret", c:[]},
+      {n:"Quai de la Gare", c:[]},
+      {n:"Bercy", c:["14"]},
+      {n:"Dugommier", c:[]},
+      {n:"Daumesnil", c:["8"]},
+      {n:"Bel-Air", c:[]},
+      {n:"Picpus", c:[]},
+      {n:"Nation", c:["1","2","9","RER A"]}
+    ]
+  },
+  "1": {
+    color: "#FFCD00",
+    name: "Ligne 1",
+    stations: [
+      {n:"La Défense", c:["RER A","T2"]},
+      {n:"Esplanade de la Défense", c:[]},
+      {n:"Pont de Neuilly", c:[]},
+      {n:"Les Sablons", c:[]},
+      {n:"Porte Maillot", c:["RER C"]},
+      {n:"Argentine", c:[]},
+      {n:"Charles de Gaulle - Étoile", c:["2","6","RER A"]},
+      {n:"George V", c:[]},
+      {n:"Franklin D. Roosevelt", c:["9"]},
+      {n:"Champs-Élysées - Clemenceau", c:["13"]},
+      {n:"Concorde", c:["8","12"]},
+      {n:"Tuileries", c:[]},
+      {n:"Palais Royal - Musée du Louvre", c:["7"]},
+      {n:"Louvre - Rivoli", c:[]},
+      {n:"Châtelet", c:["4","7","11","14","RER A","RER B","RER D"]},
+      {n:"Hôtel de Ville", c:["11"]},
+      {n:"Saint-Paul", c:[]},
+      {n:"Bastille", c:["5","8"]},
+      {n:"Gare de Lyon", c:["14","RER A","RER D"]},
+      {n:"Reuilly - Diderot", c:["8"]},
+      {n:"Nation", c:["2","6","9","RER A"]},
+      {n:"Porte de Vincennes", c:["T3a","T3b"]},
+      {n:"Saint-Mandé", c:[]},
+      {n:"Bérault", c:[]},
+      {n:"Château de Vincennes", c:[]}
+    ]
+  },
+  "4": {
+    color: "#BE418D",
+    name: "Ligne 4",
+    stations: [
+      {n:"Porte de Clignancourt", c:["T3b"]},
+      {n:"Simplon", c:[]},
+      {n:"Marcadet - Poissonniers", c:["12"]},
+      {n:"Château Rouge", c:[]},
+      {n:"Barbès - Rochechouart", c:["2"]},
+      {n:"Gare du Nord", c:["2","5","RER B","RER D","RER E"]},
+      {n:"Gare de l'Est", c:["5","7"]},
+      {n:"Château d'Eau", c:[]},
+      {n:"Strasbourg - Saint-Denis", c:["8","9"]},
+      {n:"Réaumur - Sébastopol", c:["3"]},
+      {n:"Étienne Marcel", c:[]},
+      {n:"Les Halles", c:["RER A","RER B","RER D"]},
+      {n:"Châtelet", c:["1","7","11","14","RER A","RER B","RER D"]},
+      {n:"Cité", c:[]},
+      {n:"Saint-Michel", c:[]},
+      {n:"Odéon", c:["10"]},
+      {n:"Saint-Germain-des-Prés", c:[]},
+      {n:"Saint-Sulpice", c:[]},
+      {n:"Saint-Placide", c:[]},
+      {n:"Montparnasse - Bienvenüe", c:["6","12","13"]},
+      {n:"Vavin", c:[]},
+      {n:"Raspail", c:["6"]},
+      {n:"Denfert-Rochereau", c:["6","RER B"]},
+      {n:"Mouton-Duvernet", c:[]},
+      {n:"Alésia", c:[]},
+      {n:"Porte d'Orléans", c:["T3a"]},
+      {n:"Mairie de Montrouge", c:[]},
+      {n:"Barbara", c:[]},
+      {n:"Bagneux - Lucie Aubrac", c:[]}
+    ]
+  },
+  "9": {
+    color: "#B6BD00",
+    name: "Ligne 9",
+    stations: [
+      {n:"Pont de Sèvres", c:["T2"]},
+      {n:"Billancourt", c:[]},
+      {n:"Marcel Sembat", c:[]},
+      {n:"Porte de Saint-Cloud", c:[]},
+      {n:"Exelmans", c:[]},
+      {n:"Michel-Ange - Molitor", c:["10"]},
+      {n:"Michel-Ange - Auteuil", c:["10"]},
+      {n:"Jasmin", c:[]},
+      {n:"Ranelagh", c:[]},
+      {n:"La Muette", c:["RER C"]},
+      {n:"Rue de la Pompe", c:[]},
+      {n:"Trocadéro", c:["6"]},
+      {n:"Iéna", c:[]},
+      {n:"Alma - Marceau", c:["RER C"]},
+      {n:"Franklin D. Roosevelt", c:["1"]},
+      {n:"Saint-Philippe du Roule", c:[]},
+      {n:"Miromesnil", c:["13"]},
+      {n:"Saint-Augustin", c:["14","RER E"]},
+      {n:"Havre - Caumartin", c:["3","RER A","RER E"]},
+      {n:"Chaussée d'Antin - La Fayette", c:["7"]},
+      {n:"Richelieu - Drouot", c:["8"]},
+      {n:"Grands Boulevards", c:["8"]},
+      {n:"Bonne Nouvelle", c:["8"]},
+      {n:"Strasbourg - Saint-Denis", c:["4","8"]},
+      {n:"République", c:["3","5","8","11"]},
+      {n:"Oberkampf", c:["5"]},
+      {n:"Saint-Ambroise", c:[]},
+      {n:"Voltaire", c:[]},
+      {n:"Charonne", c:[]},
+      {n:"Rue des Boulets", c:[]},
+      {n:"Nation", c:["1","2","6","RER A"]},
+      {n:"Buzenval", c:[]},
+      {n:"Maraîchers", c:[]},
+      {n:"Porte de Montreuil", c:["T3b"]},
+      {n:"Robespierre", c:[]},
+      {n:"Croix de Chavaux", c:[]},
+      {n:"Mairie de Montreuil", c:[]}
+    ]
+  },
+  "14": {
+    color: "#62259D",
+    name: "Ligne 14",
+    stations: [
+      {n:"Saint-Denis - Pleyel", c:[]},
+      {n:"Mairie de Saint-Ouen", c:["13"]},
+      {n:"Saint-Ouen", c:["RER C"]},
+      {n:"Porte de Clichy", c:["13","RER C","T3b"]},
+      {n:"Pont Cardinet", c:[]},
+      {n:"Saint-Lazare", c:["3","12","13","RER E"]},
+      {n:"Madeleine", c:["8","12"]},
+      {n:"Pyramides", c:["7"]},
+      {n:"Châtelet", c:["1","4","7","11","RER A","RER B","RER D"]},
+      {n:"Gare de Lyon", c:["1","RER A","RER D"]},
+      {n:"Bercy", c:["6"]},
+      {n:"Cour Saint-Émilion", c:[]},
+      {n:"Bibliothèque François Mitterrand", c:["RER C","T3a"]},
+      {n:"Olympiades", c:[]},
+      {n:"Maison Blanche", c:["7","T3a"]},
+      {n:"Hôpital Bicêtre", c:[]},
+      {n:"Villejuif - Gustave Roussy", c:[]},
+      {n:"L'Haÿ-les-Roses", c:[]},
+      {n:"Chevilly-Larue", c:["T7"]},
+      {n:"Thiais - Orly", c:["RER C"]},
+      {n:"Aéroport d'Orly", c:["T7"]}
+    ]
+  }
+};
+
+const ALL_CORR_OPTIONS = ["1","2","3","3bis","4","5","6","7","7bis","8","9","10","11","12","13","14",
+  "RER A","RER B","RER C","RER D","RER E","T1","T2","T3a","T3b","T7"];
+
+// Official IDFM / RATP line colours (metro + RER reliable; tram shades are best-effort)
+const CORR_COLORS = {
+  "1":"#FFCD00","2":"#003CA6","3":"#837902","3bis":"#6EC4E8","4":"#CF009E",
+  "5":"#FF7E2E","6":"#6ECA97","7":"#FA9ABA","7bis":"#6ECA97","8":"#E19BDF",
+  "9":"#B6BD00","10":"#C9910D","11":"#704B1C","12":"#007852","13":"#6EC4E8","14":"#62259D",
+  "RER A":"#E2231A","RER B":"#7BA3DC","RER C":"#FFCE00","RER D":"#00814F","RER E":"#A0006E",
+  "T1":"#0064B0","T2":"#C5469B","T3a":"#E8681C","T3b":"#008B5B","T7":"#6E491E"
+};
+// Lines whose colour is light → need dark text for legibility
+const CORR_DARK_TEXT = new Set(["1","RER C","9","T2"]);
+function corrColor(c){ return CORR_COLORS[c] || "#444"; }
+function corrTextColor(c){ return CORR_DARK_TEXT.has(c) ? "#14140f" : "#fff"; }
+
+/* ---------- Persistence (localStorage + JSON export/import) ---------- */
+const LS_KEY = "plan-vierge-metro-v1";
+let STORE = { version: 2, stats: {}, games: [] };  // stats[line][station]={misses,attempts,flagged,lastSeen}; games=[{...}]
+
+function loadStore(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw){ const d = JSON.parse(raw); if(d && d.stats) STORE = d; }
+  }catch(e){ /* localStorage unavailable (e.g. in-app preview): keep in-memory STORE */ }
+  STORE.stats = STORE.stats || {};
+  STORE.games = STORE.games || [];
+}
+function saveStore(){
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(STORE)); }catch(e){ /* no-op if blocked */ }
+}
+function getStat(line, name){
+  return (STORE.stats[line] && STORE.stats[line][name]) || {misses:0, attempts:0, flagged:false, lastSeen:0};
+}
+function setStat(line, name, st){
+  STORE.stats[line] = STORE.stats[line] || {};
+  STORE.stats[line][name] = st;
+}
+function isFlagged(line, name){
+  const s = STORE.stats[line] && STORE.stats[line][name];
+  return !!(s && s.flagged);
+}
+function flaggedStations(line){
+  const m = STORE.stats[line] || {};
+  return Object.keys(m).filter(n => m[n].flagged);
+}
+// all flagged stations across every line, kept in metro order, as {line, idx, name}
+function allFlagged(){
+  const out = [];
+  Object.keys(LINES).forEach(line=>{
+    const fl = new Set(flaggedStations(line));
+    LINES[line].stations.forEach((s,i)=>{ if(fl.has(s.n)) out.push({line, idx:i, name:s.n}); });
+  });
+  return out;
+}
+// update a station's stored stats from an outcome (used by training and review)
+function applyOutcome(line, name, wrongAttempts, revealed, correct){
+  if(!correct && !revealed) return;
+  const missed = wrongAttempts>0 || revealed;
+  const firstTry = correct && wrongAttempts===0 && !revealed;
+  const st = getStat(line, name);
+  const ns = {
+    misses: (st.misses||0) + wrongAttempts + (revealed?1:0),
+    attempts: (st.attempts||0) + 1,
+    flagged: st.flagged || false,
+    lastSeen: Date.now()
+  };
+  if(missed) ns.flagged = true;
+  else if(firstTry) ns.flagged = false;  // mastered cleanly → clear the review flag
+  setStat(line, name, ns);
+  saveStore();
+}
+function recordStation(idx){
+  const r = state.results[idx];
+  applyOutcome(state.lineKey, LINES[state.lineKey].stations[idx].n, r.wrongAttempts||0, r.revealed, r.stationCorrect===true);
+}
+// append a completed game to the log
+function logGame(entry){
+  STORE.games = STORE.games || [];
+  STORE.games.push(entry);
+  if(STORE.games.length > 200) STORE.games = STORE.games.slice(-200);
+  saveStore();
+}
+
+function exportHistory(){
+  try{
+    const blob = new Blob([JSON.stringify(STORE,null,2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "plan-vierge-historique.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 1500);
+  }catch(e){ alert("Export impossible dans ce contexte."); }
+}
+function importHistory(file){
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const d = JSON.parse(reader.result);
+      if(!d || !d.stats) throw new Error("format");
+      mergeStore(d);
+      saveStore();
+      render();
+    }catch(e){ alert("Fichier d'historique invalide."); }
+  };
+  reader.readAsText(file);
+}
+function mergeStore(d){
+  STORE.stats = STORE.stats || {}; STORE.games = STORE.games || [];
+  Object.keys(d.stats||{}).forEach(line=>{
+    STORE.stats[line] = STORE.stats[line] || {};
+    Object.keys(d.stats[line]).forEach(name=>{
+      const inc = d.stats[line][name];
+      const cur = STORE.stats[line][name] || {misses:0, attempts:0, flagged:false, lastSeen:0};
+      STORE.stats[line][name] = {
+        misses: (cur.misses||0) + (inc.misses||0),
+        attempts: (cur.attempts||0) + (inc.attempts||0),
+        flagged: !!(cur.flagged || inc.flagged),
+        lastSeen: Math.max(cur.lastSeen||0, inc.lastSeen||0)
+      };
+    });
+  });
+  // merge games, dedupe by timestamp
+  const seen = new Set(STORE.games.map(g=>g.ts));
+  (d.games||[]).forEach(g=>{ if(!seen.has(g.ts)){ STORE.games.push(g); seen.add(g.ts); } });
+  STORE.games.sort((a,b)=>a.ts-b.ts);
+  if(STORE.games.length > 200) STORE.games = STORE.games.slice(-200);
+}
+function clearHistory(){
+  if(!confirm("Effacer tout l'historique (stations à réviser + parties) ? Action irréversible.")) return;
+  STORE = { version:2, stats:{}, games:[] };
+  saveStore();
+  state.view = "train";
+  render();
+}
+
+let state = {
+  lineKey: "6",
+  mode: "ordre", // ordre | melange
+  phase: "stations", // stations | corr | finished
+  idx: 0,            // current index for ordre mode
+  results: [],        // per-station: {stationCorrect, corrCorrect}
+  bank: [],           // for melange mode: shuffled remaining names
+  placed: {},          // melange: index -> name placed correctly
+  named: {},           // nomme: index -> true once correctly named/revealed
+  activeIdx: null,     // nomme: which "?" dot is currently being answered
+  selectedChip: null,
+  pendingCorr: null,   // index of station currently being asked about correspondences
+  corrSelection: [],
+  corrChecked: false,
+  corrMode: "ask",     // "ask" (demander) | "hint" (afficher en indice) | "off"
+  bankFilter: "",      // place mode: text filter for the station bank
+  inPlay: null,        // Set of station indices counted this training session
+  gameLogged: false,   // whether the current finished training game has been logged
+  view: "train",       // "train" | "review" | "history"
+  // cross-line review session
+  rev: null,           // {queue:[{line,idx,name}], pos, results:[], wrong, revealed, phase}
+  feedback: null
+};
+
+function normalize(str){
+  return str.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+    .replace(/[-'’]/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+}
+
+function levenshtein(a, b){
+  const m=a.length, n=b.length;
+  if(m===0) return n; if(n===0) return m;
+  let prev = Array.from({length:n+1}, (_,i)=>i);
+  let cur = new Array(n+1);
+  for(let i=1;i<=m;i++){
+    cur[0]=i;
+    for(let j=1;j<=n;j++){
+      const cost = a[i-1]===b[j-1] ? 0 : 1;
+      cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost);
+    }
+    [prev, cur] = [cur, prev];
+  }
+  return prev[n];
+}
+
+// fuzzy match: tolerates ~15% of the station-name length in edits (accents/hyphens already neutralised)
+function matchesStation(guess, target){
+  const g = normalize(guess), t = normalize(target);
+  if(g.length===0) return false;
+  if(g===t) return true;
+  const allowed = Math.round(t.length * 0.15);
+  if(allowed<1) return false;
+  return levenshtein(g, t) <= allowed;
+}
+
+function shuffle(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+
+function resetLine(){
+  const L = LINES[state.lineKey];
+  state.phase = "stations";
+  state.idx = 0;
+  state.gameLogged = false;
+  state.results = L.stations.map(()=>({stationCorrect:null, corrCorrect:null, wrongAttempts:0, revealed:false}));
+  state.placed = {};
+  state.named = {};
+  state.activeIdx = null;
+  state.selectedChip = null;
+  state.pendingCorr = null;
+  state.corrSelection = [];
+  state.corrChecked = false;
+  state.bankFilter = "";
+  state.feedback = null;
+  state.inPlay = new Set(L.stations.map((s,i)=>i));
+  state.bank = L.stations.map(s=>s.n).sort((a,b)=>a.localeCompare(b,'fr',{sensitivity:'base'}));
+}
+
+function setLine(key){
+  state.lineKey = key;
+  resetLine();
+  render();
+}
+function setMode(m){
+  state.mode = m;
+  resetLine();
+  render();
+}
+function setCorrMode(m){
+  state.corrMode = m;
+  // leaving "ask" mid-question: clear any pending correspondence prompt
+  if(m !== "ask" && state.pendingCorr !== null){
+    state.pendingCorr = null;
+    if(state.mode === "melange") maybeFinishMelange();
+  }
+  render();
+}
+
+/* ---------- View navigation ---------- */
+function goView(v){
+  state.view = v;
+  if(v === "review") startReview();
+  render();
+}
+
+/* ---------- Cross-line review session ---------- */
+function startReview(){
+  const queue = shuffle(allFlagged());
+  state.rev = {
+    queue,
+    pos: 0,
+    results: [],      // {line, name, wrong, revealed, correct}
+    wrong: 0,
+    revealed: false,
+    phase: queue.length ? "card" : "empty"
+  };
+}
+function reviewCurrent(){
+  const r = state.rev;
+  return (r && r.queue[r.pos]) || null;
+}
+function reviewInput(){
+  const c = reviewCurrent(); if(!c) return;
+  const inp = document.getElementById("revInput"); if(!inp) return;
+  if(normalize(inp.value).length < normalize(c.name).length) return;
+  if(matchesStation(inp.value, c.name)) reviewAccept();
+}
+function reviewSubmit(){
+  const c = reviewCurrent(); if(!c) return;
+  const inp = document.getElementById("revInput");
+  if(matchesStation(inp.value, c.name)){
+    reviewAccept();
+  } else {
+    if(normalize(inp.value).length>0) state.rev.wrong++;
+    const fb = document.getElementById("revFb");
+    if(fb){ fb.textContent = normalize(inp.value).length>0 ? "✗ Incorrect — réessaie." : "Tape un nom de station."; fb.className = "feedback bad"; }
+    inp.focus(); inp.select();
+  }
+}
+function reviewAccept(){
+  const c = reviewCurrent(); if(!c || state.rev._resolving) return;
+  state.rev._resolving = true;
+  const fb = document.getElementById("revFb");
+  if(fb){ fb.textContent = "✓ Exact."; fb.className = "feedback ok"; }
+  applyOutcome(c.line, c.name, state.rev.wrong, false, true);
+  state.rev.results.push({line:c.line, name:c.name, wrong:state.rev.wrong, revealed:false, correct:true});
+  setTimeout(reviewAdvance, 350);
+}
+function reviewSkip(){
+  const c = reviewCurrent(); if(!c || state.rev._resolving) return;
+  state.rev._resolving = true;
+  applyOutcome(c.line, c.name, state.rev.wrong, true, false);
+  state.rev.results.push({line:c.line, name:c.name, wrong:state.rev.wrong, revealed:true, correct:false});
+  const fb = document.getElementById("revFb");
+  if(fb){ fb.textContent = `C'était « ${c.name} ».`; fb.className = "feedback bad"; }
+  setTimeout(reviewAdvance, 900);
+}
+function reviewAdvance(){
+  const r = state.rev;
+  r._resolving = false;
+  r.pos++;
+  r.wrong = 0;
+  if(r.pos >= r.queue.length){
+    // log the review session as a game
+    const total = r.results.length;
+    const firstTry = r.results.filter(x=>x.correct && x.wrong===0).length;
+    const withErrors = r.results.filter(x=>x.correct && x.wrong>0).length;
+    const revealed = r.results.filter(x=>x.revealed).length;
+    const totalWrong = r.results.reduce((a,x)=>a+x.wrong,0);
+    const pct = total ? Math.round(100*(firstTry+0.5*withErrors)/total) : 0;
+    logGame({ts:Date.now(), kind:"review", line:"—", mode:"révision", corrMode:"off", total, firstTry, withErrors, revealed, totalWrong, pct, corrOk:0, corrTotal:0});
+    r.phase = "done";
+    r.summary = {total, firstTry, withErrors, revealed, totalWrong, pct};
+  }
+  render();
+}
+
+function renderOpts(){
+  const row = document.getElementById("optsRow");
+  const opts = [["ask","Demander"],["hint","Indices"],["off","Aucune"]];
+  row.innerHTML = `
+    <span class="opts-label">Correspondances</span>
+    <div class="seg">` +
+    opts.map(([k,l])=>`<button class="${state.corrMode===k?'active':''}" onclick="setCorrMode('${k}')">${l}</button>`).join("") +
+    `</div>`;
+}
+
+function renderTabs(){
+  const tabs = document.getElementById("tabs");
+  tabs.innerHTML = "";
+  Object.keys(LINES).forEach(key=>{
+    const L = LINES[key];
+    const b = document.createElement("button");
+    b.className = "tab" + (state.lineKey===key ? " active":"");
+    b.style.background = L.color;
+    b.style.color = (key==="1") ? "#14140f" : "#fff";
+    b.textContent = L.name;
+    b.onclick = ()=>setLine(key);
+    tabs.appendChild(b);
+  });
+}
+
+function renderModes(){
+  const modes = document.getElementById("modes");
+  modes.innerHTML = "";
+  const opts = [["ordre","Ordre — je nomme"],["melange","Mélangé — je place"]];
+  opts.forEach(([key,label])=>{
+    const b = document.createElement("button");
+    b.className = "mode-btn" + (state.mode===key ? " active":"");
+    b.textContent = label;
+    b.onclick = ()=>setMode(key);
+    modes.appendChild(b);
+  });
+}
+
+function computeScore(){
+  const L = LINES[state.lineKey];
+  const idxs = [...(state.inPlay || new Set(L.stations.map((s,i)=>i)))];
+  let firstTry=0, withErrors=0, revealed=0, totalWrong=0, done=0;
+  idxs.forEach(i=>{
+    const r = state.results[i];
+    totalWrong += r.wrongAttempts || 0;
+    if(r.stationCorrect === true){
+      done++;
+      if((r.wrongAttempts||0) === 0) firstTry++; else withErrors++;
+    } else if(r.revealed){
+      done++; revealed++;
+    }
+  });
+  const total = idxs.length;
+  // points: first try = 1, recovered after error(s) = 0.5, revealed = 0
+  const points = firstTry + 0.5*withErrors;
+  const pct = total ? Math.round(100*points/total) : 0;
+  // correspondences (ask mode only), restricted to in-play stations
+  const corrTotal = idxs.filter(i=>L.stations[i].c.length>0).length;
+  const corrOk = idxs.filter(i=>state.results[i].corrCorrect===true).length;
+  const corrAttempted = idxs.filter(i=>state.results[i].corrCorrect!==null).length;
+  return {total, firstTry, withErrors, revealed, totalWrong, done, pct, corrTotal, corrOk, corrAttempted};
+}
+
+function renderNav(){
+  const nav = document.getElementById("nav");
+  const flaggedCount = allFlagged().length;
+  nav.innerHTML =
+    `<button class="nav-btn ${state.view==='train'?'active':''}" onclick="goView('train')">Entraînement</button>` +
+    `<button class="nav-btn review ${state.view==='review'?'active':''}" ${flaggedCount===0?'disabled':''} onclick="goView('review')">À réviser · ${flaggedCount}</button>` +
+    `<button class="nav-btn ${state.view==='history'?'active':''}" onclick="goView('history')">Historique</button>` +
+    `<span class="nav-sep"></span>` +
+    `<button class="nav-btn ghost" onclick="exportHistory()">Exporter</button>` +
+    `<label class="nav-btn ghost">Importer<input type="file" accept="application/json,.json" style="display:none" onchange="importHistory(this.files[0]); this.value='';"></label>` +
+    `<button class="nav-btn ghost" onclick="clearHistory()">Effacer</button>`;
+}
+
+function renderScore(){
+  const bar = document.getElementById("scorebar");
+  const s = computeScore();
+  bar.innerHTML =
+    `<span>Du premier coup <b>${s.firstTry}/${s.total}</b></span>` +
+    `<span>Essais ratés <b>${s.totalWrong}</b></span>` +
+    `<span>Score <b>${s.pct}%</b></span>` +
+    ((state.corrMode==="ask") ? `<span>Correspondances <b>${s.corrOk}/${s.corrAttempted||0}</b></span>` : ``);
+}
+
+function corrChipsHtml(corrArr, small){
+  if(corrArr.length===0) return "";
+  return `<div class="corr-row">` + corrArr.map(c=>{
+    return `<span class="corr-chip-mini" style="background:${corrColor(c)};color:${corrTextColor(c)}">${c.replace("RER ","")}</span>`;
+  }).join("") + `</div>`;
+}
+
+function renderStrip(slotMode){
+  const L = LINES[state.lineKey];
+  // suppress chips for the station whose correspondences are being asked & not yet checked
+  const suppressCorrIdx = (state.pendingCorr !== null && !state.corrChecked) ? state.pendingCorr : -1;
+  let html = `<div class="strip-scroll"><div class="strip">
+    <div class="spine" style="background:${L.color}"></div>`;
+  L.stations.forEach((s,i)=>{
+    const isHub = s.c.length>0;
+    const known = slotMode ? !!state.placed[i] : !!state.named[i];
+    const isActive = !slotMode && state.activeIdx === i;
+    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"");
+    if(isFlagged(state.lineKey, s.n)) cls += " flagged";
+    const clickable = !known && (slotMode || state.pendingCorr===null);
+    if(clickable) cls += " slot";
+    if(state.flashWrong===i) cls += " wrong-flash";
+    const dotStyle = known ? `style="border-color:${L.color}"` : "";
+    const label = known ? s.n : (isActive ? "…" : "?");
+    const showChips = isHub && i !== suppressCorrIdx && (known || state.corrMode === "hint");
+    const onclick = clickable
+      ? (slotMode ? `onclick="onSlotClick(${i})"` : `onclick="onDotClick(${i})"`)
+      : "";
+    html += `<div class="${cls}" data-idx="${i}" ${onclick}>
+        ${showChips ? corrChipsHtml(s.c, true) : ''}
+        <div class="dot" ${dotStyle}></div>
+        <div class="label">${label}</div>
+      </div>`;
+  });
+  html += `</div></div>`;
+  return html;
+}
+
+function render(){
+  renderNav();
+  const panel = document.getElementById("panel");
+  const note = document.getElementById("note");
+  const chrome = document.getElementById("trainChrome");
+
+  // route to the active view
+  if(state.view === "review"){ chrome.style.display = "none"; renderReview(panel, note); return; }
+  if(state.view === "history"){ chrome.style.display = "none"; renderHistory(panel, note); return; }
+
+  // training view
+  chrome.style.display = "";
+  renderTabs();
+  renderModes();
+  renderOpts();
+  document.getElementById("reviewBanner").innerHTML = "";
+  renderScore();
+  const L = LINES[state.lineKey];
+
+  if(state.phase === "finished"){
+    const s = computeScore();
+    if(!state.gameLogged){
+      logGame({ts:Date.now(), kind:"train", line:state.lineKey, mode:(state.mode==="ordre"?"je nomme":"je place"),
+        corrMode:state.corrMode, total:s.total, firstTry:s.firstTry, withErrors:s.withErrors, revealed:s.revealed,
+        totalWrong:s.totalWrong, pct:s.pct, corrOk:s.corrOk, corrTotal:s.corrTotal});
+      state.gameLogged = true;
+    }
+    const row = (label, val) => `<div style="display:flex;justify-content:space-between;max-width:320px;margin:0 auto;padding:5px 0;border-bottom:1px solid #e4e0d3;font-size:14px"><span style="color:var(--muted)">${label}</span><b>${val}</b></div>`;
+    panel.innerHTML = `
+      <div class="done-screen">
+        <div style="text-transform:uppercase;letter-spacing:0.1em;font-size:12px;color:var(--muted);font-weight:700">Terminé — ${L.name}</div>
+        <div class="big">${s.pct}<span style="font-size:18px;color:var(--muted)">%</span></div>
+        <div style="margin-top:14px">
+          ${row("Du premier coup", `${s.firstTry} / ${s.total}`)}
+          ${row("Après une ou plusieurs erreurs", s.withErrors)}
+          ${state.mode==="ordre" ? row("Révélées (Je ne sais pas)", s.revealed) : ``}
+          ${row("Total d'essais ratés", s.totalWrong)}
+          ${(state.corrMode==="ask") ? row("Correspondances exactes", `${s.corrOk} / ${s.corrTotal}`) : ``}
+          ${row("Stations à réviser sur cette ligne", flaggedStations(state.lineKey).length)}
+        </div>
+        <button class="btn btn-primary" style="margin-top:18px" onclick="resetLine();render()">Recommencer cette ligne</button>
+      </div>`;
+    note.textContent = "Score : 1 point par station du premier coup, ½ point si trouvée après erreur, 0 si révélée.";
+    return;
+  }
+
+  if(state.mode === "ordre"){
+    renderOrdre(panel, note);
+  } else {
+    renderMelange(panel, note);
+  }
+}
+
+/* ---------- Review view (cross-line) ---------- */
+function lineBadge(line){
+  const L = LINES[line];
+  return `<span class="line-badge" style="background:${L.color};color:${(line==='1')?'#14140f':'#fff'}">${line}</span>`;
+}
+function renderReviewMiniStrip(line, targetIdx){
+  const L = LINES[line];
+  let html = `<div class="strip-scroll"><div class="strip">
+    <div class="spine" style="background:${L.color}"></div>`;
+  L.stations.forEach((s,i)=>{
+    const isHub = s.c.length>0;
+    const isTarget = i === targetIdx;
+    const known = !isTarget;
+    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isTarget?" current":"");
+    const dotStyle = known ? `style="border-color:${L.color}"` : "";
+    const label = known ? s.n : "?";
+    const showChips = isHub && known;  // hide the target's own chips
+    html += `<div class="${cls}">
+        ${showChips ? corrChipsHtml(s.c, true) : ''}
+        <div class="dot" ${dotStyle}></div>
+        <div class="label">${label}</div>
+      </div>`;
+  });
+  html += `</div></div>`;
+  return html;
+}
+function renderReview(panel, note){
+  const r = state.rev;
+  if(!r || r.phase === "empty"){
+    panel.innerHTML = `<div class="done-screen">
+      <div class="big" style="font-size:22px">Rien à réviser 🎉</div>
+      <div style="color:var(--muted);font-size:14px;margin-top:8px">Toutes les stations ratées ont été retrouvées du premier coup. Continue à t'entraîner pour en flagger de nouvelles.</div>
+      <button class="btn btn-primary" style="margin-top:18px" onclick="goView('train')">Retour à l'entraînement</button>
+    </div>`;
+    note.textContent = "";
+    return;
+  }
+  if(r.phase === "done"){
+    const s = r.summary;
+    const row = (label, val) => `<div style="display:flex;justify-content:space-between;max-width:320px;margin:0 auto;padding:5px 0;border-bottom:1px solid #e4e0d3;font-size:14px"><span style="color:var(--muted)">${label}</span><b>${val}</b></div>`;
+    const remaining = allFlagged().length;
+    panel.innerHTML = `<div class="done-screen">
+      <div style="text-transform:uppercase;letter-spacing:0.1em;font-size:12px;color:var(--muted);font-weight:700">Révision terminée</div>
+      <div class="big">${s.pct}<span style="font-size:18px;color:var(--muted)">%</span></div>
+      <div style="margin-top:14px">
+        ${row("Du premier coup", `${s.firstTry} / ${s.total}`)}
+        ${row("Après erreur(s)", s.withErrors)}
+        ${row("Révélées", s.revealed)}
+        ${row("Total d'essais ratés", s.totalWrong)}
+        ${row("Stations encore à réviser", remaining)}
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:center">
+        ${remaining>0 ? `<button class="btn btn-primary" onclick="startReview();render()">Relancer (${remaining})</button>` : ``}
+        <button class="btn btn-secondary" onclick="goView('train')">Entraînement</button>
+      </div>
+    </div>`;
+    note.textContent = "";
+    return;
+  }
+  // active card
+  const c = reviewCurrent();
+  const total = r.queue.length;
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      ${lineBadge(c.line)}
+      <span style="font-weight:800;text-transform:uppercase;font-size:12px;letter-spacing:0.05em">${LINES[c.line].name}</span>
+      <span style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:700">Carte ${r.pos+1} / ${total}</span>
+    </div>
+    ${renderReviewMiniStrip(c.line, c.idx)}
+    <div class="qcard">
+      <div class="qlabel">Quelle est la station « ? » surlignée ?</div>
+      <input type="text" id="revInput" placeholder="Tape le nom de la station" autocomplete="off" autocapitalize="off">
+      <div class="row-btn">
+        <button class="btn btn-primary" onclick="reviewSubmit()">Valider</button>
+        <button class="btn btn-secondary" onclick="reviewSkip()">Je ne sais pas</button>
+      </div>
+      <div id="revFb" class="feedback"></div>
+    </div>`;
+  note.textContent = "Validation automatique dès que c'est bon ; fautes de frappe tolérées.";
+  const inp = document.getElementById("revInput");
+  inp.focus();
+  inp.addEventListener("keydown", e=>{ if(e.key==="Enter") reviewSubmit(); });
+  inp.addEventListener("input", reviewInput);
+}
+
+/* ---------- History view ---------- */
+function fmtDate(ts){
+  const d = new Date(ts);
+  const p = n=>String(n).padStart(2,'0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function corrModeLabel(m){ return m==="ask"?"corresp. demandées":m==="hint"?"corresp. en indice":"sans corresp."; }
+function renderHistory(panel, note){
+  const games = (STORE.games||[]).slice().sort((a,b)=>b.ts-a.ts);
+  if(games.length===0){
+    panel.innerHTML = `<div class="hist-empty">Aucune partie enregistrée pour l'instant.<br>Termine une ligne ou une révision pour qu'elle apparaisse ici.</div>`;
+    note.textContent = "";
+    return;
+  }
+  const rows = games.map(g=>{
+    const where = g.kind==="review"
+      ? `<span class="line-badge" style="background:#E8A33D;color:#1a1205">R</span> Révision`
+      : `${lineBadge(g.line)} ${LINES[g.line]?LINES[g.line].name:('Ligne '+g.line)}`;
+    const meta = g.kind==="review"
+      ? `${g.mode} · premier coup ${g.firstTry}/${g.total} · ${g.totalWrong} ratés`
+      : `${g.mode} · ${corrModeLabel(g.corrMode)} · premier coup ${g.firstTry}/${g.total} · ${g.totalWrong} ratés${g.corrMode==="ask"?` · corresp. ${g.corrOk}/${g.corrTotal}`:``}`;
+    return `<div class="hist-row">
+      <span class="when">${fmtDate(g.ts)}</span>
+      <span style="display:flex;align-items:center;gap:6px;min-width:150px">${where}</span>
+      <span class="meta">${meta}</span>
+      <span class="pct">${g.pct}%</span>
+    </div>`;
+  }).join("");
+  panel.innerHTML = `<div class="hist-wrap">
+    <div style="display:flex;align-items:center;margin-bottom:10px">
+      <div style="font-weight:800;text-transform:uppercase;font-size:13px;letter-spacing:0.06em">Historique des parties</div>
+      <span style="margin-left:auto;color:var(--muted);font-size:12px">${games.length} partie${games.length>1?'s':''}</span>
+    </div>
+    ${rows}
+  </div>`;
+  note.textContent = "";
+}
+
+function renderOrdre(panel, note){
+  const L = LINES[state.lineKey];
+
+  if(state.pendingCorr !== null){
+    renderCorrQuestion(panel, note, state.pendingCorr, advanceAfterCorr);
+    return;
+  }
+
+  const namedCount = Object.keys(state.named).length;
+  if(namedCount >= L.stations.length){
+    state.phase = "finished";
+    render();
+    return;
+  }
+
+  const stripHtml = renderStrip(false);
+  const active = state.activeIdx;
+  const qcard = (active === null)
+    ? `<div class="qcard">
+         <div class="qlabel">Clique un rond « ? » sur la ligne, puis donne le nom de cette station. (${namedCount}/${L.stations.length} trouvées)</div>
+       </div>`
+    : `<div class="qcard">
+         <div class="qlabel">Station sélectionnée — quel est son nom ?</div>
+         <input type="text" id="answerInput" placeholder="Tape le nom de la station" autocomplete="off" autocapitalize="off">
+         <div class="row-btn">
+           <button class="btn btn-primary" onclick="submitOrdre()">Valider</button>
+           <button class="btn btn-secondary" onclick="skipOrdre()">Je ne sais pas</button>
+         </div>
+         <div id="fb" class="feedback"></div>
+       </div>`;
+
+  panel.innerHTML = `
+    <div class="panel-head">
+      <div class="terminus">${L.stations[0].n}</div>
+      <div class="arrow">→</div>
+      <div class="terminus">${L.stations[L.stations.length-1].n}</div>
+    </div>
+    ${stripHtml}
+    ${qcard}
+  `;
+  note.textContent = active === null ? "" : "Astuce : la validation est automatique dès que c'est bon ; les fautes de frappe et accents sont tolérés.";
+  if(active !== null){
+    const inp = document.getElementById("answerInput");
+    inp.focus();
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter") submitOrdre(); });
+    inp.addEventListener("input", onAnswerInput);
+  }
+}
+
+function onAnswerInput(){
+  const idx = state.activeIdx;
+  if(idx === null || state.named[idx]) return;
+  const inp = document.getElementById("answerInput");
+  if(!inp) return;
+  const target = LINES[state.lineKey].stations[idx].n;
+  // auto-validate only once enough has been typed (no firing on a short prefix)
+  if(normalize(inp.value).length < normalize(target).length) return;
+  if(matchesStation(inp.value, target)){
+    acceptStation(idx);
+  }
+}
+
+function acceptStation(idx){
+  if(state.named[idx]) return;          // guard against double-fire
+  state.results[idx].stationCorrect = true;
+  state.named[idx] = true;
+  const fb = document.getElementById("fb");
+  if(fb){ fb.textContent = "✓ Exact."; fb.className = "feedback ok"; }
+  setTimeout(()=>finishNaming(idx, true), 350);
+}
+
+function onDotClick(idx){
+  if(state.named[idx]) return;
+  state.activeIdx = idx;
+  render();
+}
+
+function submitOrdre(){
+  const L = LINES[state.lineKey];
+  const idx = state.activeIdx;
+  if(idx === null || state.named[idx]) return;
+  const inp = document.getElementById("answerInput");
+  const guess = inp.value;
+  const fb = document.getElementById("fb");
+  if(matchesStation(guess, L.stations[idx].n)){
+    acceptStation(idx);
+  } else {
+    // do not reveal the answer; count the miss and let the user try again
+    if(normalize(guess).length>0) state.results[idx].wrongAttempts++;
+    fb.textContent = normalize(guess).length>0 ? "✗ Incorrect — réessaie." : "Tape un nom de station.";
+    fb.className = "feedback bad";
+    inp.focus();
+    inp.select();
+    renderScore();
+  }
+}
+
+function skipOrdre(){
+  const L = LINES[state.lineKey];
+  const idx = state.activeIdx;
+  if(idx === null) return;
+  state.results[idx].stationCorrect = false;
+  state.results[idx].revealed = true;
+  state.named[idx] = true;
+  const fb = document.getElementById("fb");
+  fb.textContent = `C'était « ${L.stations[idx].n} ».`;
+  fb.className = "feedback bad";
+  setTimeout(()=>finishNaming(idx, false), 900);
+}
+
+function finishNaming(idx, wasCorrect){
+  const L = LINES[state.lineKey];
+  state.activeIdx = null;
+  recordStation(idx);
+  if((state.corrMode==="ask") && L.stations[idx].c.length>0){
+    state.pendingCorr = idx;
+    state.corrSelection = [];
+    state.corrChecked = false;
+  }
+  render();
+}
+
+function advanceAfterCorr(){
+  state.pendingCorr = null;
+  render();
+}
+
+function renderCorrQuestion(panel, note, idx, onContinue){
+  const L = LINES[state.lineKey];
+  const station = L.stations[idx];
+  const stripHtml = renderStrip(state.mode==="melange");
+
+  panel.innerHTML = `
+    <div class="panel-head">
+      <div class="terminus">${station.n}</div>
+      <div class="arrow">correspondance(s) ?</div>
+      <div></div>
+    </div>
+    ${stripHtml}
+    <div class="qcard">
+      <div class="qlabel">Quelles lignes / RER / tram sont en correspondance ici ? (plusieurs choix possibles)</div>
+      <div class="corr-options" id="corrOptions"></div>
+      <div class="row-btn">
+        <button class="btn btn-primary" id="corrValidateBtn" onclick="validateCorr(${idx})">Valider</button>
+        <button class="btn btn-secondary" id="corrNextBtn" style="display:none" onclick="window.__corrContinue()">Continuer →</button>
+      </div>
+      <div id="fbCorr" class="feedback"></div>
+    </div>
+  `;
+  window.__corrContinue = onContinue;
+  note.textContent = "";
+
+  const opts = ALL_CORR_OPTIONS.filter(o => o !== state.lineKey);
+  const box = document.getElementById("corrOptions");
+  box.innerHTML = opts.map(o=>{
+    const sel = state.corrSelection.includes(o);
+    return `<button type="button" class="corr-opt${sel?' selected':''}" data-opt="${o}" onclick="toggleCorrOpt('${o}')"><span class="corr-swatch" style="background:${corrColor(o)}"></span>${o}</button>`;
+  }).join("");
+}
+
+function toggleCorrOpt(o){
+  if(state.corrChecked) return;
+  const i = state.corrSelection.indexOf(o);
+  if(i>=0) state.corrSelection.splice(i,1);
+  else state.corrSelection.push(o);
+  render();
+}
+
+function validateCorr(idx){
+  if(state.corrChecked) return;
+  const L = LINES[state.lineKey];
+  const correctSet = new Set(L.stations[idx].c);
+  const guessSet = new Set(state.corrSelection);
+  let allCorrect = correctSet.size === guessSet.size;
+  if(allCorrect){
+    for(const c of correctSet){ if(!guessSet.has(c)){ allCorrect = false; break; } }
+  }
+  state.results[idx].corrCorrect = allCorrect;
+  state.corrChecked = true;
+
+  // recolor chips
+  const box = document.getElementById("corrOptions");
+  box.querySelectorAll(".corr-opt").forEach(btn=>{
+    const o = btn.dataset.opt;
+    btn.onclick = null;
+    if(correctSet.has(o) && guessSet.has(o)) btn.className = "corr-opt correct";
+    else if(correctSet.has(o) && !guessSet.has(o)) btn.className = "corr-opt missed";
+    else if(!correctSet.has(o) && guessSet.has(o)) btn.className = "corr-opt extra";
+  });
+
+  document.getElementById("corrValidateBtn").style.display = "none";
+  document.getElementById("corrNextBtn").style.display = "inline-block";
+  const fb = document.getElementById("fbCorr");
+  if(allCorrect){
+    fb.textContent = "✓ Toutes les correspondances sont correctes.";
+    fb.className = "feedback ok";
+  } else {
+    fb.textContent = "✗ Vert = correct, contour pointillé = manqué, barré = en trop.";
+    fb.className = "feedback bad";
+  }
+  renderScore();
+}
+
+// ---- melange mode ----
+
+function renderMelange(panel, note){
+  const L = LINES[state.lineKey];
+
+  if(state.pendingCorr !== null){
+    renderCorrQuestion(panel, note, state.pendingCorr, ()=>{
+      state.pendingCorr = null;
+      maybeFinishMelange();
+      render();
+    });
+    return;
+  }
+
+  const placedCount = Object.keys(state.placed).length;
+  if(placedCount === L.stations.length && state.bank.length===0){
+    maybeFinishMelange();
+    if(state.phase==="finished"){ render(); return; }
+  }
+
+  const stripHtml = renderStrip(true);
+  panel.innerHTML = `
+    <div class="panel-head">
+      <div class="terminus">${L.stations[0].n}</div>
+      <div class="arrow">→</div>
+      <div class="terminus">${L.stations[L.stations.length-1].n}</div>
+    </div>
+    ${stripHtml}
+    <div class="qcard">
+      <div class="qlabel">${state.selectedChip ? "Clique sur le bon emplacement sur la ligne ci-dessus." : "Clique d'abord une station ci-dessous, puis son emplacement sur la ligne."}</div>
+      <input type="text" id="bankFilter" class="bank-filter" placeholder="Filtrer les stations…" autocomplete="off" autocapitalize="off" value="${(state.bankFilter||'').replace(/"/g,'&quot;')}">
+      <div class="bank" id="bank"></div>
+      <div id="fb" class="feedback"></div>
+    </div>
+  `;
+  note.textContent = "";
+
+  renderBankList();
+  const filterEl = document.getElementById("bankFilter");
+  filterEl.addEventListener("input", e=>{
+    state.bankFilter = e.target.value;
+    renderBankList();
+  });
+}
+
+function renderBankList(){
+  const bank = document.getElementById("bank");
+  if(!bank) return;
+  const f = normalize(state.bankFilter||"");
+  const list = f ? state.bank.filter(n=>normalize(n).includes(f)) : state.bank;
+  if(list.length===0){
+    bank.innerHTML = `<span style="font-size:12px;color:var(--muted)">Aucune station ne correspond.</span>`;
+    return;
+  }
+  bank.innerHTML = list.map(name=>{
+    const sel = state.selectedChip===name;
+    return `<button type="button" class="chip${sel?" selected":""}" onclick="selectChip('${name.replace(/'/g,"\\'")}')">${name}</button>`;
+  }).join("");
+}
+
+function selectChip(name){
+  state.selectedChip = (state.selectedChip===name) ? null : name;
+  render();
+}
+
+function onSlotClick(idx){
+  if(state.placed[idx]) return;
+  if(!state.selectedChip) return;
+  const L = LINES[state.lineKey];
+  const correctName = L.stations[idx].n;
+  if(state.selectedChip === correctName){
+    state.placed[idx] = correctName;
+    state.bank = state.bank.filter(n=>n!==correctName);
+    state.results[idx].stationCorrect = true;
+    state.selectedChip = null;
+    state.bankFilter = "";
+    recordStation(idx);
+    if((state.corrMode==="ask") && L.stations[idx].c.length>0){
+      state.pendingCorr = idx;
+      state.corrSelection = [];
+      state.corrChecked = false;
+    }
+    render();
+  } else {
+    state.flashWrong = idx;
+    // count the miss against the station the user was trying to place (the selected chip)
+    const targetIdx = L.stations.findIndex(s=>s.n===state.selectedChip);
+    if(targetIdx>=0) state.results[targetIdx].wrongAttempts++;
+    render();
+    setTimeout(()=>{ state.flashWrong = null; render(); }, 500);
+  }
+}
+
+function maybeFinishMelange(){
+  const L = LINES[state.lineKey];
+  if(Object.keys(state.placed).length === L.stations.length){
+    state.phase = "finished";
+  }
+}
+
+loadStore();
+resetLine();
+render();
+</script>
+</body>
+</html>

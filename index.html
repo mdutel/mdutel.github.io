@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Plan vierge — Paris</title>
+<style>
+  :root{
+    --bg:#0d1117; --ink:#14140f; --panel:#f7f5ef; --muted:#6b6b63; --accent:#f7f5ef;
+    --metro:#6ECA97; --rues:#E8A33D;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; min-height:100vh; background:var(--bg); color:var(--accent);
+    font-family:"Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing:antialiased;
+  }
+  body{ display:flex; flex-direction:column; align-items:center; padding:48px 18px 60px; }
+  .wrap{ width:100%; max-width:760px; }
+
+  .masthead{
+    border-bottom:3px solid var(--accent); padding-bottom:12px; margin-bottom:8px;
+    display:flex; align-items:baseline; justify-content:space-between;
+  }
+  .masthead h1{ font-size:17px; letter-spacing:0.2em; text-transform:uppercase; font-weight:700; margin:0; }
+  .masthead .sub{ font-size:11px; letter-spacing:0.1em; color:#9a9a92; text-transform:uppercase; }
+  .intro{ color:#9a9a92; font-size:14px; line-height:1.55; margin:18px 0 28px; }
+
+  .cards{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:560px){ .cards{ grid-template-columns:1fr; } }
+
+  .card{
+    display:block; text-decoration:none; color:var(--ink);
+    background:var(--panel); border-radius:10px; padding:22px 20px 20px;
+    box-shadow:0 18px 40px -18px rgba(0,0,0,0.6);
+    position:relative; overflow:hidden; transition:transform .12s ease;
+  }
+  .card:not(.disabled):hover{ transform:translateY(-3px); }
+  .card .bar{ position:absolute; top:0; left:0; right:0; height:6px; }
+  .card .kicker{ font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); font-weight:700; }
+  .card h2{ font-size:24px; margin:8px 0 6px; font-weight:800; }
+  .card p{ font-size:13px; line-height:1.5; color:#555049; margin:0 0 14px; }
+  .card .go{ font-size:13px; font-weight:800; letter-spacing:0.02em; }
+
+  .card.disabled{ opacity:0.62; cursor:default; }
+  .card.disabled .go{ color:var(--muted); }
+  .badge-soon{
+    position:absolute; top:14px; right:14px; background:var(--muted); color:#fff;
+    font-size:10px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase;
+    padding:3px 8px; border-radius:999px;
+  }
+
+  .foot{ margin-top:34px; color:#5d6169; font-size:12px; line-height:1.6; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="masthead">
+      <h1>Plan vierge</h1>
+      <div class="sub">Paris · outils perso</div>
+    </div>
+    <p class="intro">Petits outils pour mieux connaître Paris de tête. Choisis un terrain de jeu.</p>
+
+    <div class="cards">
+      <a class="card" href="metro/">
+        <div class="bar" style="background:var(--metro)"></div>
+        <div class="kicker">Réseau</div>
+        <h2>Métro</h2>
+        <p>Replacer les stations sur les lignes, réviser les correspondances, et revoir ce qu'on a raté.</p>
+        <div class="go" style="color:var(--metro)">Ouvrir →</div>
+      </a>
+
+      <div class="card disabled" aria-disabled="true">
+        <div class="bar" style="background:var(--rues)"></div>
+        <span class="badge-soon">Bientôt</span>
+        <div class="kicker">Géographie</div>
+        <h2>Rues</h2>
+        <p>Apprendre la trame des rues et des quartiers de Paris, arrondissement par arrondissement.</p>
+        <div class="go">En préparation</div>
+      </div>
+    </div>
+
+    <div class="foot">
+      Les données (scores, stations à réviser) restent dans ton navigateur, sur cet appareil. Pense à exporter/importer ton historique pour passer d'un appareil à l'autre.
+    </div>
+  </div>
+</body>
+</html>
