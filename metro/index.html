@@ -451,7 +451,13 @@ function corrTextColor(c){ return CORR_DARK_TEXT.has(c) ? "#14140f" : "#fff"; }
 
 /* ---------- Persistence (localStorage + JSON export/import) ---------- */
 const LS_KEY = "plan-vierge-metro-v1";
-let STORE = { version: 2, stats: {}, games: [] };  // stats[line][station]={misses,attempts,flagged,lastSeen}; games=[{...}]
+let STORE = { version: 3, stats: {}, games: [] };  // stats[line][station]={misses,attempts,box,due,lastSeen}
+
+// Leitner boxes: index = box number, value = interval in days before next due
+const SR_INTERVALS = [0, 1, 3, 7, 16, 35];  // box 1→1d, 2→3d, 3→7d, 4→16d, 5→35d
+const SR_MAXBOX = 5;
+const DAY_MS = 24*60*60*1000;
+function nextDue(box){ return Date.now() + SR_INTERVALS[box]*DAY_MS; }
 
 function loadStore(){
   try{
@@ -460,49 +466,81 @@ function loadStore(){
   }catch(e){ /* localStorage unavailable (e.g. in-app preview): keep in-memory STORE */ }
   STORE.stats = STORE.stats || {};
   STORE.games = STORE.games || [];
+  // migrate legacy "flagged" stations into the schedule (box 1, due now)
+  Object.keys(STORE.stats).forEach(line=>{
+    Object.keys(STORE.stats[line]).forEach(name=>{
+      const st = STORE.stats[line][name];
+      if(st.box === undefined){
+        st.box = st.flagged ? 1 : 0;
+        st.due = st.flagged ? Date.now() : 0;
+        delete st.flagged;
+      }
+    });
+  });
+  STORE.version = 3;
 }
 function saveStore(){
   try{ localStorage.setItem(LS_KEY, JSON.stringify(STORE)); }catch(e){ /* no-op if blocked */ }
 }
 function getStat(line, name){
-  return (STORE.stats[line] && STORE.stats[line][name]) || {misses:0, attempts:0, flagged:false, lastSeen:0};
+  return (STORE.stats[line] && STORE.stats[line][name]) || {misses:0, attempts:0, box:0, due:0, lastSeen:0};
 }
 function setStat(line, name, st){
   STORE.stats[line] = STORE.stats[line] || {};
   STORE.stats[line][name] = st;
 }
-function isFlagged(line, name){
+// "scheduled" = currently in the remediation pile (box >= 1)
+function isScheduled(line, name){
   const s = STORE.stats[line] && STORE.stats[line][name];
-  return !!(s && s.flagged);
+  return !!(s && s.box >= 1);
 }
-function flaggedStations(line){
+function scheduledStations(line){
   const m = STORE.stats[line] || {};
-  return Object.keys(m).filter(n => m[n].flagged);
+  return Object.keys(m).filter(n => (m[n].box||0) >= 1);
 }
-// all flagged stations across every line, kept in metro order, as {line, idx, name}
-function allFlagged(){
+// stations due for review now (box >= 1 and due date reached), across every line
+function dueStations(){
+  const now = Date.now();
   const out = [];
   Object.keys(LINES).forEach(line=>{
-    const fl = new Set(flaggedStations(line));
-    LINES[line].stations.forEach((s,i)=>{ if(fl.has(s.n)) out.push({line, idx:i, name:s.n}); });
+    const m = STORE.stats[line] || {};
+    LINES[line].stations.forEach((s,i)=>{
+      const st = m[s.n];
+      if(st && (st.box||0) >= 1 && (st.due||0) <= now) out.push({line, idx:i, name:s.n});
+    });
   });
   return out;
 }
-// update a station's stored stats from an outcome (used by training and review)
+function scheduledCountAll(){
+  let n=0;
+  Object.keys(STORE.stats).forEach(line=>Object.keys(STORE.stats[line]).forEach(name=>{ if((STORE.stats[line][name].box||0)>=1) n++; }));
+  return n;
+}
+// update a station's stored stats + Leitner schedule from an outcome
 function applyOutcome(line, name, wrongAttempts, revealed, correct){
   if(!correct && !revealed) return;
-  const missed = wrongAttempts>0 || revealed;
+  const missedNow = wrongAttempts>0 || revealed;
   const firstTry = correct && wrongAttempts===0 && !revealed;
   const st = getStat(line, name);
-  const ns = {
+  let box = st.box || 0;
+  if(box === 0){
+    // not yet scheduled — only a miss starts remediation; a clean recall stays out
+    if(missedNow) box = 1;
+  } else {
+    if(revealed) box = 1;                 // gave up → back to box 1
+    else if(firstTry) box = box + 1;      // clean recall → promote
+    // correct after error(s) → hold at same box
+  }
+  let due = 0;
+  if(box > SR_MAXBOX){ box = 0; due = 0; }   // graduated → leave the schedule (mastered)
+  else if(box >= 1){ due = nextDue(box); }
+  setStat(line, name, {
     misses: (st.misses||0) + wrongAttempts + (revealed?1:0),
     attempts: (st.attempts||0) + 1,
-    flagged: st.flagged || false,
+    box: box,
+    due: due,
     lastSeen: Date.now()
-  };
-  if(missed) ns.flagged = true;
-  else if(firstTry) ns.flagged = false;  // mastered cleanly → clear the review flag
-  setStat(line, name, ns);
+  });
   saveStore();
 }
 function recordStation(idx){
@@ -547,11 +585,15 @@ function mergeStore(d){
     STORE.stats[line] = STORE.stats[line] || {};
     Object.keys(d.stats[line]).forEach(name=>{
       const inc = d.stats[line][name];
-      const cur = STORE.stats[line][name] || {misses:0, attempts:0, flagged:false, lastSeen:0};
+      const cur = STORE.stats[line][name];
+      if(!cur){ STORE.stats[line][name] = Object.assign({misses:0,attempts:0,box:0,due:0,lastSeen:0}, inc); return; }
+      // counts accumulate; schedule (box/due) comes from whichever record is more recent
+      const newer = (inc.lastSeen||0) >= (cur.lastSeen||0) ? inc : cur;
       STORE.stats[line][name] = {
         misses: (cur.misses||0) + (inc.misses||0),
         attempts: (cur.attempts||0) + (inc.attempts||0),
-        flagged: !!(cur.flagged || inc.flagged),
+        box: newer.box||0,
+        due: newer.due||0,
         lastSeen: Math.max(cur.lastSeen||0, inc.lastSeen||0)
       };
     });
@@ -563,8 +605,8 @@ function mergeStore(d){
   if(STORE.games.length > 200) STORE.games = STORE.games.slice(-200);
 }
 function clearHistory(){
-  if(!confirm("Effacer tout l'historique (stations à réviser + parties) ? Action irréversible.")) return;
-  STORE = { version:2, stats:{}, games:[] };
+  if(!confirm("Effacer tout l'historique (planning de révision + parties) ? Action irréversible.")) return;
+  STORE = { version:3, stats:{}, games:[] };
   saveStore();
   state.view = "train";
   render();
@@ -685,7 +727,7 @@ function goView(v){
 
 /* ---------- Cross-line review session ---------- */
 function startReview(){
-  const queue = shuffle(allFlagged());
+  const queue = shuffle(dueStations());
   state.rev = {
     queue,
     pos: 0,
@@ -820,10 +862,11 @@ function computeScore(){
 
 function renderNav(){
   const nav = document.getElementById("nav");
-  const flaggedCount = allFlagged().length;
+  const dueCount = dueStations().length;
   nav.innerHTML =
     `<button class="nav-btn ${state.view==='train'?'active':''}" onclick="goView('train')">Entraînement</button>` +
-    `<button class="nav-btn review ${state.view==='review'?'active':''}" ${flaggedCount===0?'disabled':''} onclick="goView('review')">À réviser · ${flaggedCount}</button>` +
+    `<button class="nav-btn review ${state.view==='review'?'active':''}" ${dueCount===0?'disabled':''} onclick="goView('review')">À réviser · ${dueCount}</button>` +
+    `<button class="nav-btn ${state.view==='stats'?'active':''}" onclick="goView('stats')">Stats</button>` +
     `<button class="nav-btn ${state.view==='history'?'active':''}" onclick="goView('history')">Historique</button>` +
     `<span class="nav-sep"></span>` +
     `<button class="nav-btn ghost" onclick="exportHistory()">Exporter</button>` +
@@ -859,7 +902,7 @@ function renderStrip(slotMode){
     const known = slotMode ? !!state.placed[i] : !!state.named[i];
     const isActive = !slotMode && state.activeIdx === i;
     let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"");
-    if(isFlagged(state.lineKey, s.n)) cls += " flagged";
+    if(isScheduled(state.lineKey, s.n)) cls += " flagged";
     const clickable = !known && (slotMode || state.pendingCorr===null);
     if(clickable) cls += " slot";
     if(state.flashWrong===i) cls += " wrong-flash";
@@ -888,6 +931,7 @@ function render(){
   // route to the active view
   if(state.view === "review"){ chrome.style.display = "none"; renderReview(panel, note); return; }
   if(state.view === "history"){ chrome.style.display = "none"; renderHistory(panel, note); return; }
+  if(state.view === "stats"){ chrome.style.display = "none"; renderStats(panel, note); return; }
 
   // training view
   chrome.style.display = "";
@@ -917,7 +961,7 @@ function render(){
           ${state.mode==="ordre" ? row("Révélées (Je ne sais pas)", s.revealed) : ``}
           ${row("Total d'essais ratés", s.totalWrong)}
           ${(state.corrMode==="ask") ? row("Correspondances exactes", `${s.corrOk} / ${s.corrTotal}`) : ``}
-          ${row("Stations à réviser sur cette ligne", flaggedStations(state.lineKey).length)}
+          ${row("Stations à réviser sur cette ligne", scheduledStations(state.lineKey).length)}
         </div>
         <button class="btn btn-primary" style="margin-top:18px" onclick="resetLine();render()">Recommencer cette ligne</button>
       </div>`;
@@ -962,8 +1006,8 @@ function renderReview(panel, note){
   const r = state.rev;
   if(!r || r.phase === "empty"){
     panel.innerHTML = `<div class="done-screen">
-      <div class="big" style="font-size:22px">Rien à réviser 🎉</div>
-      <div style="color:var(--muted);font-size:14px;margin-top:8px">Toutes les stations ratées ont été retrouvées du premier coup. Continue à t'entraîner pour en flagger de nouvelles.</div>
+      <div class="big" style="font-size:22px">Rien à réviser aujourd'hui 🎉</div>
+      <div style="color:var(--muted);font-size:14px;margin-top:8px">Aucune station n'est due pour le moment. Les stations ratées reviennent à intervalles croissants (1, 3, 7, 16, 35 jours). Continue à t'entraîner pour en programmer de nouvelles.</div>
       <button class="btn btn-primary" style="margin-top:18px" onclick="goView('train')">Retour à l'entraînement</button>
     </div>`;
     note.textContent = "";
@@ -972,7 +1016,7 @@ function renderReview(panel, note){
   if(r.phase === "done"){
     const s = r.summary;
     const row = (label, val) => `<div style="display:flex;justify-content:space-between;max-width:320px;margin:0 auto;padding:5px 0;border-bottom:1px solid #e4e0d3;font-size:14px"><span style="color:var(--muted)">${label}</span><b>${val}</b></div>`;
-    const remaining = allFlagged().length;
+    const remaining = dueStations().length;
     panel.innerHTML = `<div class="done-screen">
       <div style="text-transform:uppercase;letter-spacing:0.1em;font-size:12px;color:var(--muted);font-weight:700">Révision terminée</div>
       <div class="big">${s.pct}<span style="font-size:18px;color:var(--muted)">%</span></div>
@@ -1051,6 +1095,86 @@ function renderHistory(panel, note){
       <span style="margin-left:auto;color:var(--muted);font-size:12px">${games.length} partie${games.length>1?'s':''}</span>
     </div>
     ${rows}
+  </div>`;
+  note.textContent = "";
+}
+
+/* ---------- Stats view: per-line progress + hardest stations ---------- */
+function lineStats(line){
+  const total = LINES[line].stations.length;
+  const m = STORE.stats[line] || {};
+  let seen=0, scheduled=0, solid=0;
+  LINES[line].stations.forEach(s=>{
+    const st = m[s.n];
+    if(st && (st.attempts||0) > 0){
+      seen++;
+      if((st.box||0) >= 1) scheduled++; else solid++;
+    }
+  });
+  const untouched = total - seen;
+  return {total, seen, scheduled, solid, untouched};
+}
+function renderStats(panel, note){
+  // ---- per-line progress bars ----
+  const lineBlocks = Object.keys(LINES).map(line=>{
+    const st = lineStats(line);
+    const pc = n => st.total ? (100*n/st.total) : 0;
+    const L = LINES[line];
+    return `<div style="margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+        ${lineBadge(line)}
+        <span style="font-weight:800;font-size:13px">${L.name}</span>
+        <span style="margin-left:auto;color:var(--muted);font-size:12px">
+          ${st.solid} solides · ${st.scheduled} en révision · ${st.untouched} non vues
+        </span>
+      </div>
+      <div style="display:flex;height:12px;border-radius:6px;overflow:hidden;background:#e7e3d6">
+        <div style="width:${pc(st.solid)}%;background:var(--ok)"></div>
+        <div style="width:${pc(st.scheduled)}%;background:var(--review)"></div>
+        <div style="width:${pc(st.untouched)}%;background:transparent"></div>
+      </div>
+    </div>`;
+  }).join("");
+
+  // ---- hardest stations (by misses, then accuracy) ----
+  const rows = [];
+  Object.keys(STORE.stats).forEach(line=>{
+    Object.keys(STORE.stats[line]).forEach(name=>{
+      const st = STORE.stats[line][name];
+      if((st.misses||0) > 0) rows.push({line, name, ...st});
+    });
+  });
+  rows.sort((a,b)=> (b.misses-a.misses) || (b.attempts-a.attempts));
+  const hardest = rows.slice(0, 20);
+  const boxLabel = st => (st.box||0)>=1
+    ? `<span style="color:var(--review);font-weight:800">boîte ${st.box}</span>`
+    : `<span style="color:var(--ok);font-weight:800">maîtrisée</span>`;
+  const dueLabel = st => {
+    if((st.box||0) < 1) return "";
+    const days = Math.ceil(((st.due||0) - Date.now())/DAY_MS);
+    if(days <= 0) return " · <b>due</b>";
+    return ` · dans ${days}\u00A0j`;
+  };
+  const hardRows = hardest.length ? hardest.map(st=>{
+    const acc = st.attempts ? Math.round(100*(st.attempts-st.misses)/st.attempts) : 0;
+    return `<div class="hist-row">
+      <span style="display:flex;align-items:center;gap:6px;min-width:38px">${lineBadge(st.line)}</span>
+      <span style="flex:1;font-weight:600">${st.name}</span>
+      <span class="meta" style="flex:none;min-width:150px;text-align:right">${st.misses} raté${st.misses>1?'s':''} · ${st.attempts} essai${st.attempts>1?'s':''} · ${acc}%</span>
+      <span style="min-width:120px;text-align:right;font-size:12px">${boxLabel(st)}${dueLabel(st)}</span>
+    </div>`;
+  }).join("") : `<div class="hist-empty">Aucune station ratée pour l'instant — rien à revoir.</div>`;
+
+  panel.innerHTML = `<div class="hist-wrap">
+    <div style="font-weight:800;text-transform:uppercase;font-size:13px;letter-spacing:0.06em;margin-bottom:12px">Progression par ligne</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-bottom:14px">
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--ok);vertical-align:middle"></span> solides</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--review);vertical-align:middle"></span> en révision</span>
+      <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#e7e3d6;vertical-align:middle"></span> non vues</span>
+    </div>
+    ${lineBlocks}
+    <div style="font-weight:800;text-transform:uppercase;font-size:13px;letter-spacing:0.06em;margin:22px 0 8px">Stations les plus difficiles</div>
+    ${hardRows}
   </div>`;
   note.textContent = "";
 }
