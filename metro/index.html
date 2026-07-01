@@ -137,37 +137,42 @@
   .strip-scroll{ padding-bottom: 6px; }
   .strip{
     position:relative; display:flex; align-items:flex-start; justify-content:space-between;
-    width: 100%; padding: 0 96px 156px 12px;
+    width: 100%; padding: 160px 60px 58px 12px;
   }
   .strip .spine{
-    position:absolute; left:34px; right:108px; top: 64px;
+    position:absolute; left:34px; right:60px; top: 160px;
     height: 6px; transform: translateY(-50%);
     border-radius: 3px; z-index:0;
   }
   .stop{
-    position:relative; z-index:1; display:flex; flex-direction:column; align-items:center;
-    flex: 1 1 0; min-width:0;
+    position:relative; z-index:1; flex: 1 1 0; min-width:0; height:0;
   }
+  /* dot centered exactly on the line (top:0 of .stop == spine level) */
   .stop .dot{
-    width:16px; height:16px; border-radius:50%; background:#fff;
-    border: 3px solid #cfcabb; margin-top: 56px;
+    position:absolute; top:0; left:50%; transform:translate(-50%,-50%);
+    width:14px; height:14px; border-radius:50%; background:#fff; box-sizing:border-box;
+    border: 3px solid #cfcabb;
   }
-  .stop.hub .dot{ width:30px; height:30px; margin-top: 49px; border-width:5px; }
+  .stop.hub .dot{ width:26px; height:26px; border-width:4px; }
   .stop.current .dot{ box-shadow: 0 0 0 5px rgba(0,0,0,0.10); }
-  .stop.done .dot{ background: var(--ok); border-color: var(--ok); }
+  /* RATP-style labels: bold, blue, ascending diagonally (33° from horizontal) */
   .stop .label{
-    position:absolute; top: 82px; left: 50%;
-    transform: rotate(45deg); transform-origin: left top;
-    white-space: nowrap; font-size: 10px; line-height:1;
+    position:absolute; top:-39px; left:50%;
+    transform: rotate(-33deg); transform-origin: left bottom;
+    white-space: nowrap; font-size: 11px; line-height:1;
     color:var(--muted); font-weight:600;
   }
-  .stop.done .label{ color: var(--ink); }
-  /* correspondence chips sit in a band ABOVE the line, growing upward from just above the dot */
-  .stop .corr-row{
-    position:absolute; left:50%; transform:translateX(-50%); bottom: 33px;
-    display:flex; gap:2px; flex-wrap:wrap; justify-content:center; align-content:flex-end;
-    width:40px; min-height:10px;
+  .stop.done .label{ color: #1a4fa0; font-weight: 800; }
+  /* terminus stations: white text on a blue ribbon, like the real RATP diagrams */
+  .stop.terminus.done .label{
+    background:#1a4fa0; color:#fff; padding:3px 7px; border-radius:3px;
   }
+  /* correspondences stacked BELOW the line: metro row, then RER/tram row */
+  .stop .corr-wrap{
+    position:absolute; top:16px; left:50%; transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center; gap:2px; width:66px;
+  }
+  .corr-line{ display:flex; gap:3px; flex-wrap:wrap; justify-content:center; }
   .corr-chip-mini{
     font-size:8px; font-weight:800; color:#fff; border-radius:3px; padding:1px 3px; line-height:1.3;
   }
@@ -578,6 +583,7 @@ function applyGrade(line, name, grade, ch, missesInc){
   st[ch] = {box, due};
   st.misses = (st.misses||0) + (missesInc||0);
   st.attempts = (st.attempts||0) + 1;
+  st.fails = (st.fails||0) + (grade==='miss' ? 1 : 0);
   st.lastSeen = Date.now();
   setStat(line, name, st);
   saveStore();
@@ -977,9 +983,13 @@ function renderScore(){
 
 function corrChipsHtml(corrArr, small){
   if(corrArr.length===0) return "";
-  return `<div class="corr-row">` + corrArr.map(c=>{
-    return `<span class="corr-chip-mini" style="background:${corrColor(c)};color:${corrTextColor(c)}">${c.replace("RER ","")}</span>`;
-  }).join("") + `</div>`;
+  const chip = c => `<span class="corr-chip-mini" style="background:${corrColor(c)};color:${corrTextColor(c)}">${c.replace("RER ","")}</span>`;
+  const metro = corrArr.filter(c => !c.startsWith("RER ") && !/^T\d/.test(c));
+  const regio = corrArr.filter(c => c.startsWith("RER ") || /^T\d/.test(c));
+  let rows = "";
+  if(metro.length) rows += `<div class="corr-line">${metro.map(chip).join("")}</div>`;
+  if(regio.length) rows += `<div class="corr-line">${regio.map(chip).join("")}</div>`;
+  return `<div class="corr-wrap">${rows}</div>`;
 }
 
 function renderStrip(slotMode){
@@ -992,12 +1002,15 @@ function renderStrip(slotMode){
     const isHub = s.c.length>0;
     const known = slotMode ? !!state.placed[i] : !!state.named[i];
     const isActive = !slotMode && state.activeIdx === i;
-    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"");
+    const isTerminus = (i===0 || i===L.stations.length-1);
+    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"");
     if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
     const clickable = !known && (slotMode || state.pendingCorr===null);
     if(clickable) cls += " slot";
     if(state.flashWrong===i) cls += " wrong-flash";
-    const dotStyle = known ? `style="border-color:${L.color}"` : "";
+    const dotStyle = known
+      ? (isHub ? `style="background:#fff;border-color:#14140f"` : `style="background:${L.color};border-color:${L.color}"`)
+      : "";
     const label = known ? s.n : (isActive ? "…" : "?");
     const showChips = isHub && i !== suppressCorrIdx && (known || state.corrMode === "hint");
     const onclick = clickable
@@ -1070,6 +1083,43 @@ function render(){
 }
 
 /* ---------- Carte mode (geographic placement) ---------- */
+// simple greedy label placement to avoid POI name overlap: tries a few offsets
+// around each marker and picks the first that doesn't collide with already-placed labels.
+function layoutPoiLabels(pois){
+  const CATPRI = {gare:3, mon:2, parc:1};
+  const fs = 10;
+  const estW = txt => txt.length * fs * 0.56;
+  const h = fs * 1.15;
+  const items = pois.map(p=>{ const [x,y]=MAP.project(p.lng,p.lat); return {p,x,y}; });
+  items.sort((a,b)=> (CATPRI[b.p.c]||0)-(CATPRI[a.p.c]||0) || a.y-b.y);
+  const candidates = [
+    {dx:6,  dy:3,  anchor:'start'},   // right
+    {dx:-6, dy:3,  anchor:'end'},     // left
+    {dx:0,  dy:-7, anchor:'middle'},  // above
+    {dx:0,  dy:14, anchor:'middle'},  // below
+    {dx:6,  dy:-7, anchor:'start'},   // upper-right
+    {dx:-6, dy:-7, anchor:'end'}      // upper-left
+  ];
+  const placed = [];
+  return items.map(it=>{
+    const w = estW(it.p.n);
+    let chosen = null;
+    for(const c of candidates){
+      let x0,x1;
+      if(c.anchor==='start'){ x0=it.x+c.dx; x1=x0+w; }
+      else if(c.anchor==='end'){ x1=it.x+c.dx; x0=x1-w; }
+      else { x0=it.x+c.dx-w/2; x1=it.x+c.dx+w/2; }
+      const y1=it.y+c.dy, y0=y1-h;
+      const bbox={x0:x0-2,y0:y0-2,x1:x1+2,y1:y1+2};
+      const overlaps = placed.some(pb=> !(bbox.x1<pb.x0||bbox.x0>pb.x1||bbox.y1<pb.y0||bbox.y0>pb.y1));
+      if(!overlaps){ chosen={dx:c.dx,dy:c.dy,anchor:c.anchor,bbox}; break; }
+    }
+    if(!chosen) return {p:it.p, x:it.x, y:it.y, skip:true};
+    placed.push(chosen.bbox);
+    return {p:it.p, x:it.x, y:it.y, tx:it.x+chosen.dx, ty:it.y+chosen.dy, anchor:chosen.anchor, skip:false};
+  });
+}
+
 function buildMapSvg(opts){
   opts = opts || {};
   const W=MAP.W, H=MAP.H;
@@ -1078,12 +1128,19 @@ function buildMapSvg(opts){
   s += `<g style="pointer-events:none">` + GEO.water.map(r=>`<path d="${ringPath(r)}" fill="#bcd6ea" stroke="none"/>`).join('') + `</g>`;
   // arrondissements
   s += `<g style="pointer-events:none" fill="none" stroke="#c9c3b2" stroke-width="1.2">` + GEO.arr.map(a=>`<path d="${ringPath(a.ring)}"/>`).join('') + `</g>`;
-  // arrondissement numbers
-  s += `<g style="pointer-events:none" fill="#b3ac98" font-size="13" font-weight="700" text-anchor="middle">` + GEO.arr.map(a=>{
-    const r=a.ring; let cx=0,cy=0; r.forEach(p=>{cx+=p[0];cy+=p[1];}); cx/=r.length; cy/=r.length;
-    const [x,y]=MAP.project(cx,cy); return `<text x="${x.toFixed(0)}" y="${y.toFixed(0)}">${a.ar}</text>`;
+  // POIs (categorised) — drawn BEFORE the trace so station dots always stay visible on top;
+  // purely decorative, never intercept clicks / selection. Labels use simple collision avoidance.
+  const CAT={ mon:{col:'#8a8472'}, gare:{col:'#7a5230'}, parc:{col:'#5a8a4a'} };
+  const laidOut = layoutPoiLabels(POIS);
+  s += `<g style="pointer-events:none;user-select:none">` + laidOut.map(it=>{
+    const col=(CAT[it.p.c]||CAT.mon).col;
+    const mark = it.p.c==='gare'
+      ? `<rect x="${(it.x-3).toFixed(1)}" y="${(it.y-3).toFixed(1)}" width="6" height="6" fill="${col}"/>`
+      : `<circle cx="${it.x.toFixed(1)}" cy="${it.y.toFixed(1)}" r="3" fill="${col}"/>`;
+    const label = it.skip ? '' : `<text x="${it.tx.toFixed(1)}" y="${it.ty.toFixed(1)}" font-size="10" text-anchor="${it.anchor}" fill="${col}">${it.p.n}</text>`;
+    return `<g>${mark}${label}</g>`;
   }).join('') + `</g>`;
-  // optional trace: ALL lines' routes WITH station dots (context/hint), non-interactive
+  // optional trace: ALL lines' routes WITH station dots (context/hint), muted colour, non-interactive
   if(opts.trace){
     s += `<g style="pointer-events:none">`;
     Object.keys(LINES).forEach(lk=>{
@@ -1091,22 +1148,12 @@ function buildMapSvg(opts){
       const pts=L.stations.map(st=>GEO.stations[st.n]).filter(Boolean);
       if(pts.length>1){
         const dpath=pts.map((p,i)=>{ const [x,y]=MAP.project(p[0],p[1]); return (i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1); }).join('');
-        s += `<path d="${dpath}" fill="none" stroke="${L.color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="0.5"/>`;
+        s += `<path d="${dpath}" fill="none" stroke="${L.color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="0.3"/>`;
       }
-      pts.forEach(p=>{ const [x,y]=MAP.project(p[0],p[1]); s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="${L.color}"/>`; });
+      pts.forEach(p=>{ const [x,y]=MAP.project(p[0],p[1]); s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="${L.color}" opacity="0.75"/>`; });
     });
     s += `</g>`;
   }
-  // POIs (categorised) — purely decorative, never intercept clicks / selection
-  const CAT={ mon:{col:'#8a8472'}, gare:{col:'#7a5230'}, parc:{col:'#5a8a4a'} };
-  s += `<g style="pointer-events:none;user-select:none">` + POIS.map(p=>{
-    const [x,y]=MAP.project(p.lng,p.lat);
-    const col=(CAT[p.c]||CAT.mon).col;
-    const mark = p.c==='gare'
-      ? `<rect x="${(x-3).toFixed(1)}" y="${(y-3).toFixed(1)}" width="6" height="6" fill="${col}"/>`
-      : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${col}"/>`;
-    return `<g>${mark}<text x="${(x+5).toFixed(1)}" y="${(y+3).toFixed(1)}" font-size="10" fill="${col}">${p.n}</text></g>`;
-  }).join('') + `</g>`;
   // answer overlay (after a click), non-interactive
   if(opts.answer){
     s += `<g style="pointer-events:none">`;
@@ -1265,8 +1312,11 @@ function renderReviewMiniStrip(line, targetIdx){
     const isHub = s.c.length>0;
     const isTarget = i === targetIdx;
     const known = !isTarget;
-    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isTarget?" current":"");
-    const dotStyle = known ? `style="border-color:${L.color}"` : "";
+    const isTerminus = (i===0 || i===L.stations.length-1);
+    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isTarget?" current":"") + (isTerminus?" terminus":"");
+    const dotStyle = known
+      ? (isHub ? `style="background:#fff;border-color:#14140f"` : `style="background:${L.color};border-color:${L.color}"`)
+      : "";
     const label = known ? s.n : "?";
     const showChips = isHub && known;  // hide the target's own chips
     html += `<div class="${cls}">
@@ -1461,9 +1511,9 @@ function renderStats(panel, note){
   // ---- hardest stations (by misses, then accuracy) ----
   const rows = [];
   Object.keys(STORE.stats).forEach(line=>{
-    Object.keys(STORE.stats[line]).forEach(name=>{
-      const st = STORE.stats[line][name];
-      if((st.misses||0) > 0) rows.push({line, name, ...st});
+    Object.keys(STORE.stats[line]).forEach(stationName=>{
+      const st = STORE.stats[line][stationName];
+      if((st.misses||0) > 0) rows.push(Object.assign({}, st, {line, stationName}));
     });
   });
   rows.sort((a,b)=> (b.misses-a.misses) || (b.attempts-a.attempts));
@@ -1477,10 +1527,11 @@ function renderStats(panel, note){
     return `${chBadge('nom', st.name)} · ${chBadge('carte', st.map)}`;
   };
   const hardRows = hardest.length ? hardest.map(st=>{
-    const acc = st.attempts ? Math.round(100*(st.attempts-st.misses)/st.attempts) : 0;
+    const fails = st.fails||0;
+    const acc = st.attempts ? Math.max(0, Math.round(100*(st.attempts-fails)/st.attempts)) : 0;
     return `<div class="hist-row">
       <span style="display:flex;align-items:center;gap:6px;min-width:38px">${lineBadge(st.line)}</span>
-      <span style="flex:1;font-weight:600">${st.name}</span>
+      <span style="flex:1;font-weight:600">${st.stationName}</span>
       <span class="meta" style="flex:none;min-width:140px;text-align:right">${st.misses} raté${st.misses>1?'s':''} · ${acc}%</span>
       <span style="min-width:150px;text-align:right;font-size:11px">${schedLabel(st)}</span>
     </div>`;
