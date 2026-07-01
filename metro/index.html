@@ -489,7 +489,7 @@ function distRating(m){
 
 /* ---------- Persistence (localStorage + JSON export/import) ---------- */
 const LS_KEY = "plan-vierge-metro-v1";
-let STORE = { version: 3, stats: {}, games: [] };  // stats[line][station]={misses,attempts,box,due,lastSeen}
+let STORE = { version: 4, stats: {}, games: [] };  // stats[line][station]={misses,attempts,box,due,lastSeen}
 
 // Leitner boxes: index = box number, value = interval in days before next due
 const SR_INTERVALS = [0, 1, 3, 7, 16, 35];  // box 1→1d, 2→3d, 3→7d, 4→16d, 5→35d
@@ -504,86 +504,92 @@ function loadStore(){
   }catch(e){ /* localStorage unavailable (e.g. in-app preview): keep in-memory STORE */ }
   STORE.stats = STORE.stats || {};
   STORE.games = STORE.games || [];
-  // migrate legacy "flagged" stations into the schedule (box 1, due now)
+  // migrate legacy shapes forward to per-channel schedules {name:{box,due}, map:{box,due}}
   Object.keys(STORE.stats).forEach(line=>{
     Object.keys(STORE.stats[line]).forEach(name=>{
       const st = STORE.stats[line][name];
-      if(st.box === undefined){
-        st.box = st.flagged ? 1 : 0;
-        st.due = st.flagged ? Date.now() : 0;
+      if(st.box !== undefined){                 // v3 flat schedule → name channel
+        st.name = {box: st.box||0, due: st.due||0};
+        st.map = {box:0, due:0};
+        delete st.box; delete st.due;
+      } else if(st.flagged !== undefined){       // very old flagged flag
+        st.name = {box: st.flagged?1:0, due: st.flagged?Date.now():0};
+        st.map = {box:0, due:0};
         delete st.flagged;
       }
+      if(!st.name) st.name = {box:0, due:0};
+      if(!st.map)  st.map  = {box:0, due:0};
     });
   });
-  STORE.version = 3;
+  STORE.version = 4;
 }
 function saveStore(){
   try{ localStorage.setItem(LS_KEY, JSON.stringify(STORE)); }catch(e){ /* no-op if blocked */ }
 }
 function getStat(line, name){
-  return (STORE.stats[line] && STORE.stats[line][name]) || {misses:0, attempts:0, box:0, due:0, lastSeen:0};
+  const s = STORE.stats[line] && STORE.stats[line][name];
+  if(s){ if(!s.name) s.name={box:0,due:0}; if(!s.map) s.map={box:0,due:0}; return s; }
+  return {misses:0, attempts:0, lastSeen:0, name:{box:0,due:0}, map:{box:0,due:0}};
 }
 function setStat(line, name, st){
   STORE.stats[line] = STORE.stats[line] || {};
   STORE.stats[line][name] = st;
 }
-// "scheduled" = currently in the remediation pile (box >= 1)
-function isScheduled(line, name){
+function schedOf(line, name, ch){
   const s = STORE.stats[line] && STORE.stats[line][name];
-  return !!(s && s.box >= 1);
+  return (s && s[ch]) || {box:0, due:0};
 }
-function scheduledStations(line){
+// "scheduled" in a given channel (or either, if ch omitted) = box >= 1
+function isScheduled(line, name, ch){
+  const s = STORE.stats[line] && STORE.stats[line][name];
+  if(!s) return false;
+  if(ch) return (s[ch] && s[ch].box>=1);
+  return ((s.name&&s.name.box>=1) || (s.map&&s.map.box>=1));
+}
+function scheduledStations(line, ch){
   const m = STORE.stats[line] || {};
-  return Object.keys(m).filter(n => (m[n].box||0) >= 1);
+  return Object.keys(m).filter(n => ch ? ((m[n][ch]&&m[n][ch].box>=1)) : (( m[n].name&&m[n].name.box>=1)||(m[n].map&&m[n].map.box>=1)) );
 }
-// stations due for review now (box >= 1 and due date reached), across every line
-function dueStations(){
+// stations due now in a channel (box>=1 && due<=now), across every line
+function dueStations(ch){
   const now = Date.now();
   const out = [];
   Object.keys(LINES).forEach(line=>{
     const m = STORE.stats[line] || {};
     LINES[line].stations.forEach((s,i)=>{
-      const st = m[s.n];
-      if(st && (st.box||0) >= 1 && (st.due||0) <= now) out.push({line, idx:i, name:s.n});
+      const st = m[s.n]; const sc = st && st[ch];
+      if(sc && (sc.box||0) >= 1 && (sc.due||0) <= now) out.push({line, idx:i, name:s.n});
     });
   });
   return out;
 }
-function scheduledCountAll(){
-  let n=0;
-  Object.keys(STORE.stats).forEach(line=>Object.keys(STORE.stats[line]).forEach(name=>{ if((STORE.stats[line][name].box||0)>=1) n++; }));
-  return n;
-}
-// update a station's stored stats + Leitner schedule from an outcome
-function applyOutcome(line, name, wrongAttempts, revealed, correct){
-  if(!correct && !revealed) return;
-  const missedNow = wrongAttempts>0 || revealed;
-  const firstTry = correct && wrongAttempts===0 && !revealed;
+// update a station's stats + Leitner schedule in one channel, from a grade
+// grade: 'clean' (promote / stay out), 'hold' (keep box, reschedule), 'miss' (schedule / reset to box 1)
+function applyGrade(line, name, grade, ch, missesInc){
   const st = getStat(line, name);
-  let box = st.box || 0;
-  if(box === 0){
-    // not yet scheduled — only a miss starts remediation; a clean recall stays out
-    if(missedNow) box = 1;
-  } else {
-    if(revealed) box = 1;                 // gave up → back to box 1
-    else if(firstTry) box = box + 1;      // clean recall → promote
-    // correct after error(s) → hold at same box
-  }
+  const sc = st[ch] || {box:0, due:0};
+  let box = sc.box || 0;
+  if(grade==='clean'){ if(box>=1) box = box + 1; }        // box 0 stays out of schedule
+  else if(grade==='hold'){ /* box unchanged */ }
+  else if(grade==='miss'){ box = 1; }                     // enter / reset remediation
   let due = 0;
-  if(box > SR_MAXBOX){ box = 0; due = 0; }   // graduated → leave the schedule (mastered)
+  if(box > SR_MAXBOX){ box = 0; due = 0; }                // graduated
   else if(box >= 1){ due = nextDue(box); }
-  setStat(line, name, {
-    misses: (st.misses||0) + wrongAttempts + (revealed?1:0),
-    attempts: (st.attempts||0) + 1,
-    box: box,
-    due: due,
-    lastSeen: Date.now()
-  });
+  st[ch] = {box, due};
+  st.misses = (st.misses||0) + (missesInc||0);
+  st.attempts = (st.attempts||0) + 1;
+  st.lastSeen = Date.now();
+  setStat(line, name, st);
   saveStore();
 }
+// name modes (nomme / place): clean if first try, else miss — on the 'name' channel
 function recordStation(idx){
   const r = state.results[idx];
-  applyOutcome(state.lineKey, LINES[state.lineKey].stations[idx].n, r.wrongAttempts||0, r.revealed, r.stationCorrect===true);
+  if(r.stationCorrect !== true && !r.revealed) return;
+  const firstTry = r.stationCorrect===true && (r.wrongAttempts||0)===0 && !r.revealed;
+  const grade = firstTry ? 'clean' : 'miss';
+  const missesInc = (r.wrongAttempts||0) + (r.revealed?1:0);
+  applyGrade(state.lineKey, LINES[state.lineKey].stations[idx].n, grade, 'name', missesInc);
 }
 // append a completed game to the log
 function logGame(entry){
@@ -619,24 +625,32 @@ function importHistory(file){
 }
 function mergeStore(d){
   STORE.stats = STORE.stats || {}; STORE.games = STORE.games || [];
+  const chMerge=(cur,inc)=>{
+    const newer = (inc && inc.lastSeen||0) >= (cur && cur.lastSeen||0);
+    return {box:(newer?inc:cur).box||0, due:(newer?inc:cur).due||0};
+  };
+  const normCh=(st,k)=>{ if(st[k]) return st[k]; if(st.box!==undefined&&k==='name') return {box:st.box||0,due:st.due||0}; return {box:0,due:0}; };
   Object.keys(d.stats||{}).forEach(line=>{
     STORE.stats[line] = STORE.stats[line] || {};
     Object.keys(d.stats[line]).forEach(name=>{
       const inc = d.stats[line][name];
       const cur = STORE.stats[line][name];
-      if(!cur){ STORE.stats[line][name] = Object.assign({misses:0,attempts:0,box:0,due:0,lastSeen:0}, inc); return; }
-      // counts accumulate; schedule (box/due) comes from whichever record is more recent
-      const newer = (inc.lastSeen||0) >= (cur.lastSeen||0) ? inc : cur;
+      if(!cur){
+        STORE.stats[line][name] = {misses:inc.misses||0, attempts:inc.attempts||0, lastSeen:inc.lastSeen||0,
+          name:normCh(inc,'name'), map:normCh(inc,'map')};
+        return;
+      }
+      const cN=normCh(cur,'name'), iN=normCh(inc,'name'), cM=normCh(cur,'map'), iM=normCh(inc,'map');
+      const stampC={lastSeen:cur.lastSeen}, stampI={lastSeen:inc.lastSeen};
       STORE.stats[line][name] = {
-        misses: (cur.misses||0) + (inc.misses||0),
-        attempts: (cur.attempts||0) + (inc.attempts||0),
-        box: newer.box||0,
-        due: newer.due||0,
-        lastSeen: Math.max(cur.lastSeen||0, inc.lastSeen||0)
+        misses:(cur.misses||0)+(inc.misses||0),
+        attempts:(cur.attempts||0)+(inc.attempts||0),
+        lastSeen:Math.max(cur.lastSeen||0, inc.lastSeen||0),
+        name:chMerge(Object.assign({},cN,stampC), Object.assign({},iN,stampI)),
+        map:chMerge(Object.assign({},cM,stampC), Object.assign({},iM,stampI))
       };
     });
   });
-  // merge games, dedupe by timestamp
   const seen = new Set(STORE.games.map(g=>g.ts));
   (d.games||[]).forEach(g=>{ if(!seen.has(g.ts)){ STORE.games.push(g); seen.add(g.ts); } });
   STORE.games.sort((a,b)=>a.ts-b.ts);
@@ -644,7 +658,7 @@ function mergeStore(d){
 }
 function clearHistory(){
   if(!confirm("Effacer tout l'historique (planning de révision + parties) ? Action irréversible.")) return;
-  STORE = { version:3, stats:{}, games:[] };
+  STORE = { version:4, stats:{}, games:[] };
   saveStore();
   state.view = "train";
   render();
@@ -772,22 +786,22 @@ function goView(v){
   render();
 }
 
-/* ---------- Cross-line review session ---------- */
-function startReview(){
-  const queue = shuffle(dueStations());
+/* ---------- Cross-line review session (two channels: name / map) ---------- */
+function startReview(channel){
+  channel = channel || (dueStations('name').length ? 'name' : (dueStations('map').length ? 'map' : 'name'));
+  const queue = shuffle(dueStations(channel));
   state.rev = {
-    queue,
-    pos: 0,
-    results: [],      // {line, name, wrong, revealed, correct}
-    wrong: 0,
-    revealed: false,
-    phase: queue.length ? "card" : "empty"
+    channel, queue, pos: 0, results: [], wrong: 0,
+    phase: queue.length ? "card" : "empty",
+    click: null, answered: false
   };
 }
+function switchReviewChannel(ch){ startReview(ch); render(); }
 function reviewCurrent(){
   const r = state.rev;
   return (r && r.queue[r.pos]) || null;
 }
+/* -- name channel: typing -- */
 function reviewInput(){
   const c = reviewCurrent(); if(!c) return;
   const inp = document.getElementById("revInput"); if(!inp) return;
@@ -811,18 +825,47 @@ function reviewAccept(){
   state.rev._resolving = true;
   const fb = document.getElementById("revFb");
   if(fb){ fb.textContent = "✓ Exact."; fb.className = "feedback ok"; }
-  applyOutcome(c.line, c.name, state.rev.wrong, false, true);
-  state.rev.results.push({line:c.line, name:c.name, wrong:state.rev.wrong, revealed:false, correct:true});
+  const grade = state.rev.wrong===0 ? 'clean' : 'miss';
+  applyGrade(c.line, c.name, grade, 'name', state.rev.wrong);
+  state.rev.results.push({line:c.line, name:c.name, wrong:state.rev.wrong, revealed:false, correct:true, dist:0});
   setTimeout(reviewAdvance, 350);
 }
 function reviewSkip(){
   const c = reviewCurrent(); if(!c || state.rev._resolving) return;
   state.rev._resolving = true;
-  applyOutcome(c.line, c.name, state.rev.wrong, true, false);
-  state.rev.results.push({line:c.line, name:c.name, wrong:state.rev.wrong, revealed:true, correct:false});
+  applyGrade(c.line, c.name, 'miss', 'name', 1);
+  state.rev.results.push({line:c.line, name:c.name, wrong:state.rev.wrong, revealed:true, correct:false, dist:99999});
   const fb = document.getElementById("revFb");
   if(fb){ fb.textContent = `C'était « ${c.name} ».`; fb.className = "feedback bad"; }
   setTimeout(reviewAdvance, 900);
+}
+/* -- map channel: click to place -- */
+function onRevMapClick(ev){
+  const r = state.rev;
+  if(!r || r.answered) return;
+  const svg = document.getElementById("mapSvg");
+  const rect = svg.getBoundingClientRect();
+  const vx = (ev.clientX - rect.left)/rect.width * MAP.W;
+  const vy = (ev.clientY - rect.top)/rect.height * MAP.H;
+  revMapResolve(MAP.unproject(vx, vy));
+}
+function revMapReveal(){ revMapResolve(null); }
+function revMapResolve(click){
+  const r = state.rev;
+  const c = reviewCurrent();
+  const coord = GEO.stations[c.name];
+  const dist = click ? MAP.haversine(click[0], click[1], coord[0], coord[1]) : Infinity;
+  r.click = click;
+  r.answered = true;
+  const grade = (!click || dist>=500) ? 'miss' : (dist<200 ? 'clean' : 'hold');
+  applyGrade(c.line, c.name, grade, 'map', grade==='miss'?1:0);
+  r.results.push({line:c.line, name:c.name, dist:click?dist:99999, revealed:!click, correct:click&&dist<500});
+  render();
+}
+function revMapNext(){
+  const r = state.rev;
+  r.answered = false; r.click = null;
+  reviewAdvance();
 }
 function reviewAdvance(){
   const r = state.rev;
@@ -830,16 +873,17 @@ function reviewAdvance(){
   r.pos++;
   r.wrong = 0;
   if(r.pos >= r.queue.length){
-    // log the review session as a game
     const total = r.results.length;
-    const firstTry = r.results.filter(x=>x.correct && x.wrong===0).length;
-    const withErrors = r.results.filter(x=>x.correct && x.wrong>0).length;
-    const revealed = r.results.filter(x=>x.revealed).length;
-    const totalWrong = r.results.reduce((a,x)=>a+x.wrong,0);
+    const isMap = r.channel==='map';
+    const firstTry = isMap ? r.results.filter(x=>x.dist<200).length : r.results.filter(x=>x.correct && x.wrong===0).length;
+    const withErrors = isMap ? r.results.filter(x=>x.dist>=200&&x.dist<500).length : r.results.filter(x=>x.correct && x.wrong>0).length;
+    const revealed = isMap ? r.results.filter(x=>x.dist>=99999).length : r.results.filter(x=>x.revealed).length;
+    const totalWrong = isMap ? r.results.filter(x=>x.dist>=500).length : r.results.reduce((a,x)=>a+x.wrong,0);
     const pct = total ? Math.round(100*(firstTry+0.5*withErrors)/total) : 0;
-    logGame({ts:Date.now(), kind:"review", line:"—", mode:"révision", corrMode:"off", total, firstTry, withErrors, revealed, totalWrong, pct, corrOk:0, corrTotal:0});
+    logGame({ts:Date.now(), kind:"review", line:"—", mode:(isMap?"révision carte":"révision"), corrMode:"off",
+      total, firstTry, withErrors, revealed, totalWrong, pct, corrOk:0, corrTotal:0});
     r.phase = "done";
-    r.summary = {total, firstTry, withErrors, revealed, totalWrong, pct};
+    r.summary = {total, firstTry, withErrors, revealed, totalWrong, pct, isMap};
   }
   render();
 }
@@ -909,7 +953,7 @@ function computeScore(){
 
 function renderNav(){
   const nav = document.getElementById("nav");
-  const dueCount = dueStations().length;
+  const dueCount = dueStations('name').length + dueStations('map').length;
   nav.innerHTML =
     `<button class="nav-btn ${state.view==='train'?'active':''}" onclick="goView('train')">Entraînement</button>` +
     `<button class="nav-btn review ${state.view==='review'?'active':''}" ${dueCount===0?'disabled':''} onclick="goView('review')">À réviser · ${dueCount}</button>` +
@@ -949,7 +993,7 @@ function renderStrip(slotMode){
     const known = slotMode ? !!state.placed[i] : !!state.named[i];
     const isActive = !slotMode && state.activeIdx === i;
     let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"");
-    if(isScheduled(state.lineKey, s.n)) cls += " flagged";
+    if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
     const clickable = !known && (slotMode || state.pendingCorr===null);
     if(clickable) cls += " slot";
     if(state.flashWrong===i) cls += " wrong-flash";
@@ -1010,7 +1054,7 @@ function render(){
           ${state.mode==="ordre" ? row("Révélées (Je ne sais pas)", s.revealed) : ``}
           ${row("Total d'essais ratés", s.totalWrong)}
           ${(state.corrMode==="ask") ? row("Correspondances exactes", `${s.corrOk} / ${s.corrTotal}`) : ``}
-          ${row("Stations à réviser sur cette ligne", scheduledStations(state.lineKey).length)}
+          ${row("Stations à réviser sur cette ligne", scheduledStations(state.lineKey,'name').length)}
         </div>
         <button class="btn btn-primary" style="margin-top:18px" onclick="resetLine();render()">Recommencer cette ligne</button>
       </div>`;
@@ -1030,29 +1074,32 @@ function buildMapSvg(opts){
   opts = opts || {};
   const W=MAP.W, H=MAP.H;
   let s = `<svg id="mapSvg" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;background:#f3f1e8;border-radius:8px;touch-action:manipulation" ${opts.clickable?'onclick="onMapClick(event)"':''}>`;
-  // water
-  s += `<g>` + GEO.water.map(r=>`<path d="${ringPath(r)}" fill="#bcd6ea" stroke="none"/>`).join('') + `</g>`;
+  // water (non-interactive)
+  s += `<g style="pointer-events:none">` + GEO.water.map(r=>`<path d="${ringPath(r)}" fill="#bcd6ea" stroke="none"/>`).join('') + `</g>`;
   // arrondissements
-  s += `<g fill="none" stroke="#c9c3b2" stroke-width="1.2">` + GEO.arr.map(a=>`<path d="${ringPath(a.ring)}"/>`).join('') + `</g>`;
+  s += `<g style="pointer-events:none" fill="none" stroke="#c9c3b2" stroke-width="1.2">` + GEO.arr.map(a=>`<path d="${ringPath(a.ring)}"/>`).join('') + `</g>`;
   // arrondissement numbers
-  s += `<g fill="#b3ac98" font-size="13" font-weight="700" text-anchor="middle">` + GEO.arr.map(a=>{
+  s += `<g style="pointer-events:none" fill="#b3ac98" font-size="13" font-weight="700" text-anchor="middle">` + GEO.arr.map(a=>{
     const r=a.ring; let cx=0,cy=0; r.forEach(p=>{cx+=p[0];cy+=p[1];}); cx/=r.length; cy/=r.length;
     const [x,y]=MAP.project(cx,cy); return `<text x="${x.toFixed(0)}" y="${y.toFixed(0)}">${a.ar}</text>`;
   }).join('') + `</g>`;
-  // optional line trace (corridor hint) — drawn under POIs, no station dots
-  if(opts.trace && opts.traceLine){
-    const L = LINES[opts.traceLine];
-    const pts = L.stations.map(st=>GEO.stations[st.n]).filter(Boolean);
-    if(pts.length>1){
-      const dpath = pts.map((p,i)=>{ const [x,y]=MAP.project(p[0],p[1]); return (i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1); }).join('');
-      s += `<path d="${dpath}" fill="none" stroke="${L.color}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round" opacity="0.55"/>`;
-    }
+  // optional trace: ALL lines' routes WITH station dots (context/hint), non-interactive
+  if(opts.trace){
+    s += `<g style="pointer-events:none">`;
+    Object.keys(LINES).forEach(lk=>{
+      const L=LINES[lk];
+      const pts=L.stations.map(st=>GEO.stations[st.n]).filter(Boolean);
+      if(pts.length>1){
+        const dpath=pts.map((p,i)=>{ const [x,y]=MAP.project(p[0],p[1]); return (i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1); }).join('');
+        s += `<path d="${dpath}" fill="none" stroke="${L.color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="0.5"/>`;
+      }
+      pts.forEach(p=>{ const [x,y]=MAP.project(p[0],p[1]); s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="${L.color}"/>`; });
+    });
+    s += `</g>`;
   }
-  // POIs (categorised); suppress any within ~220m of the current target so the answer isn't labelled
+  // POIs (categorised) — purely decorative, never intercept clicks / selection
   const CAT={ mon:{col:'#8a8472'}, gare:{col:'#7a5230'}, parc:{col:'#5a8a4a'} };
-  const tgt = opts.suppressNear || null;
-  s += `<g>` + POIS.map(p=>{
-    if(tgt && MAP.haversine(p.lng,p.lat,tgt[0],tgt[1]) < 220) return '';
+  s += `<g style="pointer-events:none;user-select:none">` + POIS.map(p=>{
     const [x,y]=MAP.project(p.lng,p.lat);
     const col=(CAT[p.c]||CAT.mon).col;
     const mark = p.c==='gare'
@@ -1060,8 +1107,9 @@ function buildMapSvg(opts){
       : `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="${col}"/>`;
     return `<g>${mark}<text x="${(x+5).toFixed(1)}" y="${(y+3).toFixed(1)}" font-size="10" fill="${col}">${p.n}</text></g>`;
   }).join('') + `</g>`;
-  // answer overlay (after a click)
+  // answer overlay (after a click), non-interactive
   if(opts.answer){
+    s += `<g style="pointer-events:none">`;
     const t=MAP.project(opts.answer.tlng, opts.answer.tlat);
     const c=opts.answer.click ? MAP.project(opts.answer.click[0], opts.answer.click[1]) : null;
     if(c){
@@ -1070,9 +1118,23 @@ function buildMapSvg(opts){
     }
     s += `<circle cx="${t[0].toFixed(1)}" cy="${t[1].toFixed(1)}" r="6" fill="${opts.answer.color}" stroke="#fff" stroke-width="2"/>`;
     s += `<text x="${t[0].toFixed(1)}" y="${(t[1]-10).toFixed(1)}" font-size="12" font-weight="800" text-anchor="middle" fill="#14140f">${opts.answer.name}</text>`;
+    s += `</g>`;
   }
   s += `</svg>`;
   return s;
+}
+
+// shared result popup overlaid on the map centre (avoids scrolling back up)
+function mapResultPopup(dist, nextFn, isLast){
+  const rt = distRating(dist);
+  const label = dist>=99999 ? `<span style="color:${rt.color};font-weight:800">Non trouvée</span>` :
+    `<span style="color:${rt.color};font-weight:800">${rt.label}</span> · ${Math.round(dist)} m`;
+  return `<div style="position:absolute;top:42%;left:50%;transform:translate(-50%,-50%);
+      background:rgba(255,255,255,0.97);border:1px solid #d8d4c4;border-radius:10px;
+      box-shadow:0 10px 30px -8px rgba(0,0,0,0.45);padding:12px 16px;text-align:center;min-width:180px">
+    <div style="font-size:14px;margin-bottom:10px">${label}</div>
+    <button class="btn btn-primary" onclick="${nextFn}">${isLast?'Voir le résultat':'Suivant →'}</button>
+  </div>`;
 }
 
 function renderCarte(panel, note){
@@ -1094,7 +1156,7 @@ function renderCarte(panel, note){
         ${row("Excellent (< 200 m)", exc)}
         ${row("Bien (< 500 m)", bien)}
         ${row("Trop loin (≥ 500 m)", loin)}
-        ${row("Stations à réviser sur cette ligne", scheduledStations(state.lineKey).length)}
+        ${row("Stations à réviser sur cette ligne", scheduledStations(state.lineKey,'map').length)}
       </div>
       <button class="btn btn-primary" style="margin-top:18px" onclick="resetLine();render()">Recommencer</button>
     </div>`;
@@ -1106,12 +1168,12 @@ function renderCarte(panel, note){
   const station = L.stations[idx];
   const coord = GEO.stations[station.n];
   const answered = m.answered;
-  let answer = null, feedback = "";
+  let answer = null, popup = "";
   if(answered){
     const dist = m.results[m.results.length-1].dist;
     const rt = distRating(dist);
     answer = {tlng:coord[0], tlat:coord[1], click:m.click, name:station.n, color:rt.color};
-    feedback = `<span style="color:${rt.color};font-weight:800">${rt.label}</span> · ${Math.round(dist)} m d'écart`;
+    popup = mapResultPopup(dist, "carteNext()", m.pos+1>=m.queue.length);
   }
   panel.innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
@@ -1119,15 +1181,17 @@ function renderCarte(panel, note){
       <span style="font-weight:800;font-size:15px">${answered ? station.n : "Où est&nbsp;: "+station.n+"&nbsp;?"}</span>
       <span style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:700">${m.pos+1} / ${m.queue.length}</span>
     </div>
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;min-height:38px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;min-height:34px">
       ${answered
-        ? `<button class="btn btn-primary" onclick="carteNext()">${m.pos+1>=m.queue.length?'Voir le résultat':'Suivant →'}</button>
-           <span class="feedback" style="margin:0">${feedback}</span>`
+        ? ``
         : `<button class="btn btn-secondary" style="padding-left:14px" onclick="carteReveal()">Je ne sais pas</button>
            <span style="margin-left:auto;font-size:12px;color:var(--muted);cursor:pointer;user-select:none" onclick="toggleTrace()">
-             <span style="display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #b9b3a2;background:${state.mapTrace?L.color:'transparent'};vertical-align:-2px;margin-right:5px"></span>Tracé de la ligne</span>`}
+             <span style="display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #b9b3a2;background:${state.mapTrace?'#6b6b63':'transparent'};vertical-align:-2px;margin-right:5px"></span>Afficher toutes les lignes</span>`}
     </div>
-    ${buildMapSvg({clickable:!answered, answer, trace: state.mapTrace, traceLine: state.lineKey, suppressNear: coord})}
+    <div style="position:relative">
+      ${buildMapSvg({clickable:!answered, answer, trace: state.mapTrace})}
+      ${popup}
+    </div>
   `;
   note.textContent = answered ? "" : "Clique sur la carte à l'emplacement de la station. Repères : Seine (bleu), arrondissements, gares (carrés), monuments, parcs (vert).";
 }
@@ -1161,14 +1225,12 @@ function carteResolve(click){
   m.click = click;
   m.answered = true;
   m.results.push({name:station.n, dist:click?dist:99999});
-  // feed spaced repetition
-  if(!click || dist >= 500){
-    applyOutcome(state.lineKey, station.n, 0, true, false);   // miss / reveal → schedule, box 1
-  } else if(dist < 200){
-    applyOutcome(state.lineKey, station.n, 0, false, true);   // excellent → clean recall (promote)
-  } else {
-    applyOutcome(state.lineKey, station.n, 1, false, true);   // bien → correct after error (hold)
-  }
+  // feed spaced repetition (map channel). Only "trop loin"/reveal schedules for review.
+  let grade;
+  if(!click || dist >= 500) grade = 'miss';        // trop loin / je ne sais pas → à réviser
+  else if(dist < 200) grade = 'clean';             // excellent → promote / stays out
+  else grade = 'hold';                             // bien → hold, not scheduled
+  applyGrade(state.lineKey, station.n, grade, 'map', grade==='miss'?1:0);
   render();
 }
 function carteNext(){
@@ -1216,12 +1278,22 @@ function renderReviewMiniStrip(line, targetIdx){
   html += `</div></div>`;
   return html;
 }
+function reviewChannelBar(){
+  const nName = dueStations('name').length, nMap = dueStations('map').length;
+  const ch = state.rev ? state.rev.channel : 'name';
+  return `<div class="seg" style="margin-bottom:16px">
+    <button class="${ch==='name'?'active':''}" onclick="switchReviewChannel('name')">Je nomme / place · ${nName}</button>
+    <button class="${ch==='map'?'active':''}" onclick="switchReviewChannel('map')">Je situe · ${nMap}</button>
+  </div>`;
+}
 function renderReview(panel, note){
   const r = state.rev;
+  const bar = reviewChannelBar();
   if(!r || r.phase === "empty"){
-    panel.innerHTML = `<div class="done-screen">
-      <div class="big" style="font-size:22px">Rien à réviser aujourd'hui 🎉</div>
-      <div style="color:var(--muted);font-size:14px;margin-top:8px">Aucune station n'est due pour le moment. Les stations ratées reviennent à intervalles croissants (1, 3, 7, 16, 35 jours). Continue à t'entraîner pour en programmer de nouvelles.</div>
+    const ch = r ? r.channel : 'name';
+    panel.innerHTML = `${bar}<div class="done-screen">
+      <div class="big" style="font-size:22px">Rien à réviser dans ce canal 🎉</div>
+      <div style="color:var(--muted);font-size:14px;margin-top:8px">Aucune station « ${ch==='map'?'je situe':'je nomme / place'} » n'est due pour le moment. Les stations ratées reviennent à intervalles croissants (1, 3, 7, 16, 35 jours).</div>
       <button class="btn btn-primary" style="margin-top:18px" onclick="goView('train')">Retour à l'entraînement</button>
     </div>`;
     note.textContent = "";
@@ -1230,19 +1302,18 @@ function renderReview(panel, note){
   if(r.phase === "done"){
     const s = r.summary;
     const row = (label, val) => `<div style="display:flex;justify-content:space-between;max-width:320px;margin:0 auto;padding:5px 0;border-bottom:1px solid #e4e0d3;font-size:14px"><span style="color:var(--muted)">${label}</span><b>${val}</b></div>`;
-    const remaining = dueStations().length;
-    panel.innerHTML = `<div class="done-screen">
-      <div style="text-transform:uppercase;letter-spacing:0.1em;font-size:12px;color:var(--muted);font-weight:700">Révision terminée</div>
+    const remaining = dueStations(r.channel).length;
+    panel.innerHTML = `${bar}<div class="done-screen">
+      <div style="text-transform:uppercase;letter-spacing:0.1em;font-size:12px;color:var(--muted);font-weight:700">Révision terminée — ${r.channel==='map'?'je situe':'je nomme / place'}</div>
       <div class="big">${s.pct}<span style="font-size:18px;color:var(--muted)">%</span></div>
       <div style="margin-top:14px">
-        ${row("Du premier coup", `${s.firstTry} / ${s.total}`)}
-        ${row("Après erreur(s)", s.withErrors)}
-        ${row("Révélées", s.revealed)}
-        ${row("Total d'essais ratés", s.totalWrong)}
-        ${row("Stations encore à réviser", remaining)}
+        ${row(s.isMap?"Excellent (< 200 m)":"Du premier coup", `${s.firstTry} / ${s.total}`)}
+        ${row(s.isMap?"Bien (< 500 m)":"Après erreur(s)", s.withErrors)}
+        ${row(s.isMap?"Trop loin / non trouvées":"Révélées", s.isMap? (s.totalWrong+s.revealed) : s.revealed)}
+        ${row("Stations encore à réviser (ce canal)", remaining)}
       </div>
       <div style="margin-top:16px;display:flex;gap:8px;justify-content:center">
-        ${remaining>0 ? `<button class="btn btn-primary" onclick="startReview();render()">Relancer (${remaining})</button>` : ``}
+        ${remaining>0 ? `<button class="btn btn-primary" onclick="startReview('${r.channel}');render()">Relancer (${remaining})</button>` : ``}
         <button class="btn btn-secondary" onclick="goView('train')">Entraînement</button>
       </div>
     </div>`;
@@ -1252,7 +1323,34 @@ function renderReview(panel, note){
   // active card
   const c = reviewCurrent();
   const total = r.queue.length;
-  panel.innerHTML = `
+
+  if(r.channel === 'map'){
+    const coord = GEO.stations[c.name];
+    const answered = r.answered;
+    let answer=null, popup="";
+    if(answered){
+      const dist = r.results[r.results.length-1].dist;
+      const rt = distRating(dist);
+      answer = {tlng:coord[0], tlat:coord[1], click:r.click, name:c.name, color:rt.color};
+      popup = mapResultPopup(dist, "revMapNext()", r.pos+1>=total);
+    }
+    panel.innerHTML = `${bar}
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        ${lineBadge(c.line)}
+        <span style="font-weight:800;font-size:15px">${answered ? c.name : "Où est&nbsp;: "+c.name+"&nbsp;?"}</span>
+        <span style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:700">${r.pos+1} / ${total}</span>
+      </div>
+      <div style="min-height:34px;margin-bottom:10px">${answered?``:`<button class="btn btn-secondary" onclick="revMapReveal()">Je ne sais pas</button>`}</div>
+      <div style="position:relative">
+        ${buildMapSvgRev({clickable:!answered, answer})}
+        ${popup}
+      </div>`;
+    note.textContent = answered ? "" : "Clique sur la carte à l'emplacement de la station.";
+    return;
+  }
+
+  // name channel: typing mini-strip card
+  panel.innerHTML = `${bar}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       ${lineBadge(c.line)}
       <span style="font-weight:800;text-transform:uppercase;font-size:12px;letter-spacing:0.05em">${LINES[c.line].name}</span>
@@ -1273,6 +1371,10 @@ function renderReview(panel, note){
   inp.focus();
   inp.addEventListener("keydown", e=>{ if(e.key==="Enter") reviewSubmit(); });
   inp.addEventListener("input", reviewInput);
+}
+// map svg for review: same as buildMapSvg but wired to the review click handler
+function buildMapSvgRev(opts){
+  return buildMapSvg(opts).replace('onclick="onMapClick(event)"', 'onclick="onRevMapClick(event)"');
 }
 
 /* ---------- History view ---------- */
@@ -1327,7 +1429,8 @@ function lineStats(line){
     const st = m[s.n];
     if(st && (st.attempts||0) > 0){
       seen++;
-      if((st.box||0) >= 1) scheduled++; else solid++;
+      const sched = (st.name&&st.name.box>=1) || (st.map&&st.map.box>=1);
+      if(sched) scheduled++; else solid++;
     }
   });
   const untouched = total - seen;
@@ -1365,22 +1468,21 @@ function renderStats(panel, note){
   });
   rows.sort((a,b)=> (b.misses-a.misses) || (b.attempts-a.attempts));
   const hardest = rows.slice(0, 20);
-  const boxLabel = st => (st.box||0)>=1
-    ? `<span style="color:var(--review);font-weight:800">boîte ${st.box}</span>`
-    : `<span style="color:var(--ok);font-weight:800">maîtrisée</span>`;
-  const dueLabel = st => {
-    if((st.box||0) < 1) return "";
-    const days = Math.ceil(((st.due||0) - Date.now())/DAY_MS);
-    if(days <= 0) return " · <b>due</b>";
-    return ` · dans ${days}\u00A0j`;
+  const chBadge = (label, sc) => (sc && sc.box>=1)
+    ? `<span style="color:var(--review);font-weight:700">${label} b${sc.box}</span>`
+    : `<span style="color:var(--ok)">${label}✓</span>`;
+  const schedLabel = st => {
+    const nSched=(st.name&&st.name.box>=1), mSched=(st.map&&st.map.box>=1);
+    if(!nSched && !mSched) return `<span style="color:var(--ok);font-weight:700">maîtrisée</span>`;
+    return `${chBadge('nom', st.name)} · ${chBadge('carte', st.map)}`;
   };
   const hardRows = hardest.length ? hardest.map(st=>{
     const acc = st.attempts ? Math.round(100*(st.attempts-st.misses)/st.attempts) : 0;
     return `<div class="hist-row">
       <span style="display:flex;align-items:center;gap:6px;min-width:38px">${lineBadge(st.line)}</span>
       <span style="flex:1;font-weight:600">${st.name}</span>
-      <span class="meta" style="flex:none;min-width:150px;text-align:right">${st.misses} raté${st.misses>1?'s':''} · ${st.attempts} essai${st.attempts>1?'s':''} · ${acc}%</span>
-      <span style="min-width:120px;text-align:right;font-size:12px">${boxLabel(st)}${dueLabel(st)}</span>
+      <span class="meta" style="flex:none;min-width:140px;text-align:right">${st.misses} raté${st.misses>1?'s':''} · ${acc}%</span>
+      <span style="min-width:150px;text-align:right;font-size:11px">${schedLabel(st)}</span>
     </div>`;
   }).join("") : `<div class="hist-empty">Aucune station ratée pour l'instant — rien à revoir.</div>`;
 
