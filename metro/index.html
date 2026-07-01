@@ -155,9 +155,12 @@
   }
   .stop.hub .dot{ width:26px; height:26px; border-width:4px; }
   .stop.current .dot{ box-shadow: 0 0 0 5px rgba(0,0,0,0.10); }
-  /* RATP-style labels: bold, blue, ascending diagonally (33° from horizontal) */
+  /* RATP-style labels: bold, blue, ascending diagonally (33° from horizontal).
+     Anchored with `bottom` (not `top`) so the rotation pivot — and thus the
+     baseline height — stays identical whether or not the terminus banner's
+     padding is applied. */
   .stop .label{
-    position:absolute; top:-39px; left:50%;
+    position:absolute; bottom:30px; left:50%;
     transform: rotate(-33deg); transform-origin: left bottom;
     white-space: nowrap; font-size: 11px; line-height:1;
     color:var(--muted); font-weight:600;
@@ -167,9 +170,10 @@
   .stop.terminus.done .label{
     background:#1a4fa0; color:#fff; padding:3px 7px; border-radius:3px;
   }
-  /* correspondences stacked BELOW the line: metro row, then RER/tram row */
+  /* correspondences stacked BELOW the line: metro row, then RER/tram row.
+     Top offset matches the label's bottom offset for a symmetric look. */
   .stop .corr-wrap{
-    position:absolute; top:16px; left:50%; transform:translateX(-50%);
+    position:absolute; top:30px; left:50%; transform:translateX(-50%);
     display:flex; flex-direction:column; align-items:center; gap:2px; width:66px;
   }
   .corr-line{ display:flex; gap:3px; flex-wrap:wrap; justify-content:center; }
