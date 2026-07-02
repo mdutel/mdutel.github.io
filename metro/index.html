@@ -974,6 +974,7 @@ function clearHistory(){
   render();
 }
 
+let _forkScrollLeft = 0;  // remembered horizontal scroll of the forked-line strip
 let state = {
   lineKey: "6",
   mode: "ordre", // ordre | melange
@@ -1074,11 +1075,13 @@ function resetLine(){
 
 function setLine(key){
   state.lineKey = key;
+  _forkScrollLeft = 0;   // new line → start its strip at the left
   resetLine();
   render();
 }
 function setMode(m){
   state.mode = m;
+  _forkScrollLeft = 0;   // mode switch rebuilds the strip fresh
   resetLine();
   render();
 }
@@ -1374,10 +1377,51 @@ function renderForkStrip(slotMode){
 
 // Positions each row's spine to span exactly between its first & last real dots,
 // and draws the diagonal connector from the fork dot to the start of branch B.
+// On the finished screen we want the WHOLE plan visible at once (no scroll),
+// even for long lines (7, 9, 13...). Scale the strip down to fit the panel width.
+// We wait until the fork diagonal has been positioned (it's added by
+// scheduleForkLayout on a later frame) before measuring, then scale the whole
+// strip element — diagonal included — so everything stays aligned.
+function fitFinishedStrip(tries){
+  tries = tries || 0;
+  requestAnimationFrame(()=>{
+    const box = document.querySelector('.fit-strip');
+    if(!box) return;
+    const isFork = !!box.querySelector('.fork-inner');
+    // for forked lines, wait until the diagonal has been drawn (up to ~10 frames)
+    if(isFork && !box.querySelector('.fork-diag') && tries < 10){
+      return fitFinishedStrip(tries+1);
+    }
+    const scroller = box.querySelector('.fork-wrap');
+    if(scroller) scroller.style.overflowX = 'visible';
+    const content = box.querySelector('.fork-inner') || box.querySelector('.strip');
+    if(!content) return;
+    // reset any previous scaling before measuring
+    content.style.transform = '';
+    box.style.height = '';
+    const avail = box.clientWidth;
+    const natural = content.scrollWidth;
+    const scale = (natural > avail && natural > 0) ? (avail / natural) : 1;
+    if(scale < 1){
+      content.style.transformOrigin = 'left top';
+      content.style.transform = `scale(${scale})`;
+      box.style.height = (content.getBoundingClientRect().height) + 'px';
+      box.style.overflow = 'hidden';
+    }
+  });
+}
+
 function scheduleForkLayout(color){
   requestAnimationFrame(()=>{
     const inner = document.querySelector('.fork-inner');
     if(!inner) return;
+    // Measurements below use getBoundingClientRect, which is affected by any CSS
+    // scale on .fork-inner (applied on the finished screen by fitFinishedStrip).
+    // Temporarily clear the transform so all positions are computed in the
+    // element's own unscaled coordinate system; the finished-screen fit is
+    // re-applied afterwards.
+    const hadTransform = inner.style.transform;
+    if(hadTransform) inner.style.transform = '';
     const wrap = inner.closest('.fork-wrap');
     const irect = inner.getBoundingClientRect();
     const cx = d => { const r=d.getBoundingClientRect(); return r.x + r.width/2 - irect.x; };
@@ -1436,7 +1480,12 @@ function scheduleForkLayout(color){
     // Prevents an always-visible empty scrollbar (e.g. macOS "always show").
     if(wrap){
       wrap.style.overflowX = (inner.scrollWidth > wrap.clientWidth + 1) ? "auto" : "hidden";
+      // restore the scroll position captured before the re-render (clamped to range)
+      const maxScroll = Math.max(0, inner.scrollWidth - wrap.clientWidth);
+      wrap.scrollLeft = Math.min(_forkScrollLeft, maxScroll);
     }
+    // if we cleared a finished-screen scale to measure, recompute the fit now
+    if(hadTransform) fitFinishedStrip();
   });
 }
 
@@ -1503,6 +1552,13 @@ function renderStrip(slotMode){
 }
 
 function render(){
+  // Preserve horizontal scroll of the forked-line strip across re-renders:
+  // every click rebuilds #panel (recreating .fork-wrap), which would otherwise
+  // reset scrollLeft to 0. scheduleForkLayout restores it after the new strip
+  // is laid out.
+  const prevWrap = document.querySelector(".fork-wrap");
+  _forkScrollLeft = prevWrap ? prevWrap.scrollLeft : _forkScrollLeft;
+
   renderNav();
   const panel = document.getElementById("panel");
   const note = document.getElementById("note");
@@ -1534,7 +1590,7 @@ function render(){
     }
     const row = (label, val) => `<div style="display:flex;justify-content:space-between;max-width:320px;margin:0 auto;padding:5px 0;border-bottom:1px solid #e4e0d3;font-size:14px"><span style="color:var(--muted)">${label}</span><b>${val}</b></div>`;
     panel.innerHTML = `
-      ${renderLineStrip(state.mode === "melange")}
+      <div class="fit-strip">${renderLineStrip(state.mode === "melange")}</div>
       <div class="done-screen">
         <div style="text-transform:uppercase;letter-spacing:0.1em;font-size:12px;color:var(--muted);font-weight:700">Terminé — ${L.name}</div>
         <div class="big">${s.pct}<span style="font-size:18px;color:var(--muted)">%</span></div>
@@ -1549,6 +1605,7 @@ function render(){
         <button class="btn btn-primary" style="margin-top:18px" onclick="resetLine();render()">Recommencer cette ligne</button>
       </div>`;
     note.textContent = "Score : 1 point par station du premier coup, ½ point si trouvée après erreur, 0 si révélée.";
+    fitFinishedStrip();
     return;
   }
 
@@ -2345,7 +2402,11 @@ window.addEventListener("resize", ()=>{
   if(!LINES[state.lineKey] || !LINES[state.lineKey].branches) return;
   if(state.view !== "train" || state.mode === "carte") return;
   if(_resizeRaf) cancelAnimationFrame(_resizeRaf);
-  _resizeRaf = requestAnimationFrame(()=>{ scheduleForkLayout(LINES[state.lineKey].color); });
+  _resizeRaf = requestAnimationFrame(()=>{
+    scheduleForkLayout(LINES[state.lineKey].color);
+    // on the finished screen the strip is scaled to fit; recompute that fit too
+    if(state.phase === "finished") fitFinishedStrip();
+  });
 });
 </script>
 </body>
