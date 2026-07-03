@@ -1186,6 +1186,11 @@ function normalize(str){
     .replace(/\s+/g," ")
     .trim();
 }
+// escape untrusted strings (e.g. imported history JSON) before innerHTML interpolation
+const HTML_ESCAPES = {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c => HTML_ESCAPES[c]);
+}
 
 function levenshtein(a, b){
   const m=a.length, n=b.length;
@@ -2174,7 +2179,9 @@ function carteNext(){
 /* ---------- Review view (cross-line) ---------- */
 function lineBadge(line){
   const L = LINES[line];
-  return `<span class="line-badge" style="background:${L.color};color:${(line==='1')?'#14140f':'#fff'}">${line}</span>`;
+  const bg = L ? L.color : "#6b6b63";
+  const fg = L ? ((line==='1')?'#14140f':'#fff') : '#fff';
+  return `<span class="line-badge" style="background:${bg};color:${fg}">${escapeHtml(line)}</span>`;
 }
 function renderReviewMiniStrip(line, targetName){
   const L = LINES[line];
@@ -2317,20 +2324,20 @@ function renderHistory(panel, note){
   const rows = games.map(g=>{
     const where = g.kind==="review"
       ? `<span class="line-badge" style="background:#E8A33D;color:#1a1205">R</span> Révision`
-      : `${lineBadge(g.line)} ${LINES[g.line]?LINES[g.line].name:('Ligne '+g.line)}`;
+      : `${lineBadge(g.line)} ${escapeHtml(LINES[g.line]?LINES[g.line].name:('Ligne '+g.line))}`;
     let meta;
     if(g.kind==="review"){
-      meta = `${g.mode} · premier coup ${g.firstTry}/${g.total} · ${g.totalWrong} ratés`;
+      meta = `${escapeHtml(g.mode)} · premier coup ${escapeHtml(g.firstTry)}/${escapeHtml(g.total)} · ${escapeHtml(g.totalWrong)} ratés`;
     } else if(g.kind==="carte"){
-      meta = `carte · écart moyen ${g.avgDist!=null?g.avgDist+' m':'—'} · excellent ${g.firstTry}/${g.total}`;
+      meta = `carte · écart moyen ${g.avgDist!=null?escapeHtml(g.avgDist)+' m':'—'} · excellent ${escapeHtml(g.firstTry)}/${escapeHtml(g.total)}`;
     } else {
-      meta = `${g.mode} · ${corrModeLabel(g.corrMode)} · premier coup ${g.firstTry}/${g.total} · ${g.totalWrong} ratés${g.corrMode==="ask"?` · corresp. ${g.corrOk}/${g.corrTotal}`:``}`;
+      meta = `${escapeHtml(g.mode)} · ${corrModeLabel(g.corrMode)} · premier coup ${escapeHtml(g.firstTry)}/${escapeHtml(g.total)} · ${escapeHtml(g.totalWrong)} ratés${g.corrMode==="ask"?` · corresp. ${escapeHtml(g.corrOk)}/${escapeHtml(g.corrTotal)}`:``}`;
     }
     return `<div class="hist-row">
       <span class="when">${fmtDate(g.ts)}</span>
       <span style="display:flex;align-items:center;gap:6px;min-width:150px">${where}</span>
       <span class="meta">${meta}</span>
-      <span class="pct">${g.pct}%</span>
+      <span class="pct">${escapeHtml(g.pct)}%</span>
     </div>`;
   }).join("");
   panel.innerHTML = `<div class="hist-wrap">
@@ -2405,7 +2412,7 @@ function renderStats(panel, note){
     const acc = st.attempts ? Math.max(0, Math.round(100*(st.attempts-fails)/st.attempts)) : 0;
     return `<div class="hist-row">
       <span style="display:flex;align-items:center;gap:6px;min-width:38px">${lineBadge(st.line)}</span>
-      <span style="flex:1;font-weight:600">${st.stationName}</span>
+      <span style="flex:1;font-weight:600">${escapeHtml(st.stationName)}</span>
       <span class="meta" style="flex:none;min-width:140px;text-align:right">${st.misses} raté${st.misses>1?'s':''} · ${acc}%</span>
       <span style="min-width:150px;text-align:right;font-size:11px">${schedLabel(st)}</span>
     </div>`;
