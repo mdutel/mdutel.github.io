@@ -46,6 +46,8 @@
   polygon.reveal,circle.reveal{fill:rgba(221,138,46,.40)!important}
   .mastered{stroke:var(--ok)!important;stroke-width:2!important}
   polygon.mastered,circle.mastered{fill:rgba(79,138,107,.15)!important;stroke:var(--ok)!important}
+  .scheduled{stroke:var(--accent)!important;stroke-width:2!important}
+  polygon.scheduled,circle.scheduled{fill:rgba(221,138,46,.12)!important;stroke:var(--accent)!important}
   @keyframes pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.25}}
 
   /* Panneau */
@@ -493,7 +495,7 @@
     svg.appendChild(gAxesB); svg.appendChild(gAxesA); svg.appendChild(gPoi); svg.appendChild(gCircle);
   }
 
-  function setClass(t, cls) { t.els.forEach(e => { e.setAttribute("class", e.getAttribute("class").replace(/ (hi|ok|err|reveal|mastered)/g, "") + (cls ? " " + cls : "")); }); }
+  function setClass(t, cls) { t.els.forEach(e => { e.setAttribute("class", e.getAttribute("class").replace(/ (hi|ok|err|reveal|mastered|scheduled)/g, "") + (cls ? " " + cls : "")); }); }
 
   // ---------- État de jeu ----------
   let solutionMode = false;
@@ -509,10 +511,8 @@
     return targets;
   }
   function refreshBase() {
-    // remet tout à l'état de base, marque les maîtrisées en vert
-    targets.forEach(t => {
-      setClass(t, isGraduated(itemRecord(currentInsee, t.name)) ? "mastered" : "");
-    });
+    // remet tout à l'état de base (maîtrisées en vert, en cours en orange)
+    targets.forEach(t => { setClass(t, baseClassOf(t)); });
   }
   function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; } return a; }
 
@@ -723,7 +723,12 @@
     return [p.x, p.y];
   }
   const HIT = 16;
-  function baseClassOf(t) { return isGraduated(itemRecord(currentInsee, t.name)) ? "mastered" : ""; }
+  function baseClassOf(t) {
+    const rec = itemRecord(currentInsee, t.name);
+    if (isGraduated(rec)) return "mastered";
+    if (rec && rec.attempts > 0) return "scheduled";
+    return "";
+  }
   function clearHi() { hi.forEach(t => setClass(t, baseClassOf(t))); hi = []; }
   function sameSet(a, b) { if (a.length !== b.length) return false; for (const t of a) if (b.indexOf(t) < 0) return false; return true; }
   function candidates(mx, my) {
@@ -821,12 +826,17 @@
       cats.forEach(cat => {
         const items = pool.filter(t => t.kind === kind && t.category === cat);
         if (!items.length) return;
-        const done = items.filter(t => isGraduated(itemRecord(currentInsee, t.name))).length;
+        const graduated = items.filter(t => isGraduated(itemRecord(currentInsee, t.name))).length;
+        const scheduled = items.filter(t => {
+          const rec = itemRecord(currentInsee, t.name);
+          return rec && rec.attempts > 0 && !isGraduated(rec);
+        }).length;
         const row = document.createElement("div"); row.className = "cnt-row";
-        const pct = Math.round(done / items.length * 100);
+        const pctGrad = Math.round(graduated / items.length * 100);
+        const pctSched = Math.round(scheduled / items.length * 100);
         row.innerHTML = `<span class="cnt-label">${cat}</span>`
-          + `<span class="cnt-bar"><i style="width:${pct}%"></i></span>`
-          + `<span class="cnt-num">${done}/${items.length}</span>`;
+          + `<span class="cnt-bar" style="display:flex"><i style="width:${pctGrad}%;background:var(--ok)"></i><i style="width:${pctSched}%;background:var(--accent)"></i></span>`
+          + `<span class="cnt-num">${graduated}/${items.length}</span>`;
         box.appendChild(row);
       });
     });
