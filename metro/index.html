@@ -185,29 +185,16 @@
   }
   .corr-line{ display:flex; gap:3px; flex-wrap:wrap; justify-content:center; }
 
-  /* ---------- Forked-line strip (line 13): two stacked friezes + connector ---------- */
-  /* Unlike .strip (which stretches to fill the panel), fork friezes use a fixed
-     per-station width and a horizontally scrollable wrapper, since the two rows
-     need a shared, predictable coordinate system to align the connector. */
+  /* ---------- Forked & loop lines (7/13/10/7bis): SVG trace + positioned stops ---------- */
+  /* The trunk, the diverging branches and the loop arcs are drawn as smooth SVG
+     paths (curved fan-out fork, shallow lens loop — matching the official RATP
+     plans). Each station is an absolutely-positioned overlay sharing the SVG's
+     coordinate system, so all dot/label/chip styling & click handling is reused. */
   .fork-wrap{ overflow-x:auto; padding-bottom:6px; }
   .fork-inner{ position:relative; }
-  /* fork direction: forkSide "left" reverses the row (trunk[0] at far right,
-     branches extend leftward — line 13); "right" keeps normal order (trunk[0]
-     at far left, branches extend rightward — line 7). Matches each RATP plan. */
-  .fstrip{
-    position:relative; display:flex; align-items:flex-start;
-    padding: 160px 12px 58px 12px;
-  }
-  .fork-inner.fork-left .fstrip{ flex-direction:row-reverse; }
-  .fork-inner.fork-right .fstrip{ flex-direction:row; }
-  /* spine position (left/width) is set at runtime so the line runs exactly
-     between the first and last REAL dots of each row (no orphan segment, and
-     jointive with the end dots) */
-  .fstrip .spine{
-    position:absolute; top:160px;
-    height:6px; transform:translateY(-50%); border-radius:3px; z-index:0;
-  }
-  .fstop{ position:relative; z-index:1; flex:0 0 46px; width:46px; min-width:0; height:0; }
+  .line-svg{ position:absolute; top:0; left:0; z-index:0; overflow:visible; }
+  /* one station overlay, pinned at its dot centre (width/height 0 → children centre on it) */
+  .fstop{ position:absolute; z-index:1; width:0; height:0; }
   .fstop .dot{
     position:absolute; top:0; left:50%; transform:translate(-50%,-50%);
     width:14px; height:14px; border-radius:50%; background:#fff; box-sizing:border-box;
@@ -215,37 +202,40 @@
   }
   .fstop.hub .dot, .fstop.fork .dot{ width:26px; height:26px; border-width:4px; }
   .fstop.current .dot{ box-shadow: 0 0 0 5px rgba(0,0,0,0.10); }
+  /* labels ascend to the right; above the line for trunk + top lane, below for the
+     bottom lane (mirrored) so the two branches read like the official plan */
   .fstop .label{
     position:absolute; bottom:30px; left:50%;
     transform: rotate(-33deg); transform-origin: left bottom;
     white-space: nowrap; font-size: 11px; line-height:1;
     color:var(--muted); font-weight:600;
   }
+  .fstop.below .label{ bottom:auto; top:30px; transform: rotate(33deg); transform-origin: left top; }
   .fstop.done .label{ color: #1a4fa0; font-weight: 800; }
   .fstop.terminus.done .label{
     background:#1a4fa0; color:#fff; padding:3px 7px; border-radius:3px;
   }
+  /* correspondence chips sit on the gap (centre) side of the line: below for the
+     trunk / top lane, above for the bottom lane — so they never hit the label */
   .fstop .corr-wrap{
     position:absolute; top:30px; left:50%; transform:translateX(-50%);
     display:flex; flex-direction:column; align-items:center; gap:2px; width:66px;
   }
+  .fstop.below .corr-wrap{ top:auto; bottom:30px; }
   .fstop.slot{ cursor:pointer; }
   .fstop.slot .dot{ border-style:dashed; }
   .fstop.slot.target .dot{ border-color: var(--ink); }
   .fstop.slot.wrong-flash .dot{ background: var(--bad); border-color: var(--bad); }
   .fstop.flagged .dot{ outline:2px solid var(--review); outline-offset:2px; }
-  /* diagonal connector at the fork, positioned + rotated at runtime */
-  .fork-diag{ position:absolute; height:6px; transform-origin:left center; border-radius:3px; z-index:0; }
   .corr-chip-mini{
     font-size:8px; font-weight:800; color:#fff; border-radius:3px; padding:1px 3px; line-height:1.3;
   }
-  /* loop line (line 10): one-way direction captions on each arc */
+  /* loop line: one-way direction captions on each arc */
   .loop-cap{
     position:absolute; transform:translate(-50%,-50%); white-space:nowrap; z-index:2;
     font-size:10px; font-weight:800; letter-spacing:0.02em; color:#8a6d1e;
     background:#fbf4dd; border:1px solid #e6d59a; border-radius:10px; padding:2px 8px;
   }
-  .fstrip-mid .spine{ /* two segments positioned at runtime (west + east trunk) */ }
 
   /* question card */
   .qcard{ margin-top:6px; }
@@ -1159,7 +1149,6 @@ function clearHistory(){
   render();
 }
 
-let _forkScrollLeft = 0;  // remembered horizontal scroll of the forked-line strip
 let state = {
   lineKey: "6",
   mode: "ordre", // ordre | melange
@@ -1265,13 +1254,11 @@ function resetLine(){
 
 function setLine(key){
   state.lineKey = key;
-  _forkScrollLeft = 0;   // new line → start its strip at the left
   resetLine();
   render();
 }
 function setMode(m){
   state.mode = m;
-  _forkScrollLeft = 0;   // mode switch rebuilds the strip fresh
   resetLine();
   render();
 }
@@ -1508,103 +1495,144 @@ function corrChipsHtml(corrArr, small){
   return `<div class="corr-wrap">${rows}</div>`;
 }
 
-// ---------- Forked lines (line 13): two stacked friezes + connector ----------
-// Layout constants shared between the renderer and the connector's geometry.
-const FORK_SW = 46;      // fixed width per station (px)
-const FORK_TOP_PAD = 160; // matches .fstrip's padding-top (spine Y within a row)
-const FORK_ROW_GAP = 40; // vertical gap between the two friezes
+// ---------- Forked & loop lines (7/13/10/7bis): SVG trace geometry ----------
+// Both topologies are laid out on three horizontal lanes: the trunk on a centre
+// line, and two lanes offset above/below it (the two branches of a fork, or the
+// two one-way arcs of a loop). Coordinates are computed here, drawn as smooth
+// SVG bezier paths, with each station overlaid as an absolutely-positioned .fstop.
+const FORK_SW = 46;         // horizontal step per station (px)
+const LANE_DY = 52;         // vertical offset of a branch / loop arc from the trunk centre line
+const TRACE_PAD_TOP = 182;  // room above the top lane for labels, ribbons + loop caption
+const TRACE_PAD_BOT = 182;  // room below the bottom lane
+const TRACE_PAD_X = 40;     // horizontal padding so end labels / ribbons aren't clipped
 
-function renderForkStrip(slotMode){
+const _f = n => n.toFixed(1);
+// cubic bezier from (x0,y0) to (x1,y1) with horizontal tangents at both ends —
+// gives the smooth "ease out then level off" divergence/convergence of the trace
+const _seg = (x0,y0,x1,y1) => `C ${_f((x0+x1)/2)} ${_f(y0)}, ${_f((x0+x1)/2)} ${_f(y1)}, ${_f(x1)} ${_f(y1)}`;
+
+// Fork line (7 right-opening, 13 left-opening): straight trunk, then two branches
+// fan out symmetrically from the fork station. Returns stops + SVG path + size.
+function buildForkGeo(L){
+  const right = (L.forkSide || 'left') === 'right';
+  const T = L.trunk.length, A = L.branches.A.stations.length, B = L.branches.B.stations.length;
+  const maxBr = Math.max(A, B);
+  const px = TRACE_PAD_X;
+  const centerY = TRACE_PAD_TOP + LANE_DY, topY = TRACE_PAD_TOP, botY = TRACE_PAD_TOP + 2*LANE_DY;
+  // fork = last trunk station; branches extend outward (right for line 7, left for 13)
+  const forkX = right ? (px + (T-1)*FORK_SW) : (px + maxBr*FORK_SW);
+  const brX = k => right ? (forkX + (k+1)*FORK_SW) : (forkX - (k+1)*FORK_SW);
+  const stops = [];
+  L.trunk.forEach((s,i)=>{
+    const x = right ? (px + i*FORK_SW) : (forkX + (T-1-i)*FORK_SW);
+    stops.push({idx:i, x, y:centerY, station:s, lane:'trunk', isTerminus:i===0, isJunction:i===T-1});
+  });
+  L.branches.A.stations.forEach((s,k)=> stops.push({idx:T+k, x:brX(k), y:topY, station:s, lane:'top', isTerminus:k===A-1}));
+  L.branches.B.stations.forEach((s,k)=> stops.push({idx:T+A+k, x:brX(k), y:botY, station:s, lane:'bottom', isTerminus:k===B-1}));
+
+  const trunkStartX = right ? px : (forkX + (T-1)*FORK_SW);
+  const aFirstX = brX(0), aLastX = brX(A-1), bFirstX = brX(0), bLastX = brX(B-1);
+  let d = `M ${_f(trunkStartX)} ${_f(centerY)} L ${_f(forkX)} ${_f(centerY)} `;
+  d += `M ${_f(forkX)} ${_f(centerY)} ${_seg(forkX,centerY,aFirstX,topY)} L ${_f(aLastX)} ${_f(topY)} `;
+  d += `M ${_f(forkX)} ${_f(centerY)} ${_seg(forkX,centerY,bFirstX,botY)} L ${_f(bLastX)} ${_f(botY)}`;
+  const width = 2*px + (T-1+maxBr)*FORK_SW;
+  return {stops, d, width, height: TRACE_PAD_TOP + 2*LANE_DY + TRACE_PAD_BOT, caps:[]};
+}
+
+// Loop line (10, 7bis): west trunk → junction → two one-way arcs (shallow lens) →
+// junction → east trunk. loopSouth is the bottom arc, loopNorth the top arc.
+function buildLoopGeo(L){
+  const W=L.westTrunk.length, S=L.loopSouth.length, N=L.loopNorth.length, E=L.eastTrunk.length;
+  const maxArc = Math.max(N, S);
+  const px = TRACE_PAD_X;
+  const centerY = TRACE_PAD_TOP + LANE_DY, topY = TRACE_PAD_TOP, botY = TRACE_PAD_TOP + 2*LANE_DY;
+  const wjX = px + (W-1)*FORK_SW;            // west junction = last westTrunk station
+  const loopSpan = (maxArc+1)*FORK_SW;
+  const ejX = wjX + loopSpan;                // east junction = first eastTrunk station
+  const arcX = (k,count) => wjX + loopSpan*(k+1)/(count+1);   // evenly space arc stations between junctions
+  const stops = [];
+  L.westTrunk.forEach((s,i)=> stops.push({idx:i, x:px+i*FORK_SW, y:centerY, station:s, lane:'trunk', isTerminus:i===0, isJunction:i===W-1}));
+  L.loopSouth.forEach((s,j)=> stops.push({idx:W+j, x:arcX(j,S), y:botY, station:s, lane:'bottom'}));
+  L.loopNorth.forEach((s,k)=> stops.push({idx:W+S+k, x:arcX(k,N), y:topY, station:s, lane:'top'}));
+  const baseE = W+S+N;
+  L.eastTrunk.forEach((s,m)=> stops.push({idx:baseE+m, x:ejX+m*FORK_SW, y:centerY, station:s, lane:'trunk', isTerminus:m===E-1, isJunction:m===0}));
+
+  const nF=arcX(0,N), nL=arcX(N-1,N), sF=arcX(0,S), sL=arcX(S-1,S);
+  let d = `M ${_f(px)} ${_f(centerY)} L ${_f(wjX)} ${_f(centerY)} `;
+  d += `M ${_f(wjX)} ${_f(centerY)} ${_seg(wjX,centerY,nF,topY)} L ${_f(nL)} ${_f(topY)} ${_seg(nL,topY,ejX,centerY)} `;
+  d += `M ${_f(wjX)} ${_f(centerY)} ${_seg(wjX,centerY,sF,botY)} L ${_f(sL)} ${_f(botY)} ${_seg(sL,botY,ejX,centerY)} `;
+  d += `M ${_f(ejX)} ${_f(centerY)} L ${_f(ejX+(E-1)*FORK_SW)} ${_f(centerY)}`;
+  const endW = L.loopEndW || L.westTrunk[0].n, endE = L.loopEndE || L.eastTrunk[E-1].n;
+  const caps = [
+    {x:(nF+nL)/2, y:topY-100, text:'◀ sens unique · vers '+endW},
+    {x:(sF+sL)/2, y:botY+100, text:'sens unique · vers '+endE+' ▶'}
+  ];
+  const width = ejX + (E-1)*FORK_SW + px;
+  return {stops, d, width, height: TRACE_PAD_TOP + 2*LANE_DY + TRACE_PAD_BOT, caps};
+}
+
+// one station overlay for the SVG-trace lines (dot + label + chips), positioned at
+// its computed (x,y). Preserves every training/solutions state class & click handler.
+function traceStopHtml(st, slotMode){
   const L = LINES[state.lineKey];
-  const forkSide = L.forkSide || "left";   // "left" (line 13) or "right" (line 7)
-  const trunkLen = L.trunk.length, aLen = L.branches.A.stations.length, bLen = L.branches.B.stations.length;
-  const forkSlot = trunkLen - 1; // fork station's position (last of the trunk)
+  const s = st.station, idx = st.idx;
   const suppressCorrIdx = (state.pendingCorr !== null && !state.corrChecked) ? state.pendingCorr : -1;
+  const isHub = s.c.length>0;
+  const known = state.view==="solutions" || (slotMode ? !!state.placed[idx] : !!state.named[idx]);
+  const isActive = state.view!=="solutions" && !slotMode && state.activeIdx === idx;
+  let cls = "fstop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"")
+          + (st.isTerminus?" terminus":"") + (st.lane==='bottom'?" below":"");
+  if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
+  const clickable = !known && (slotMode || state.pendingCorr===null);
+  if(clickable) cls += " slot";
+  if(state.flashWrong===idx) cls += " wrong-flash";
+  const dotStyle = known
+    ? (isHub ? `background:#fff;border-color:#14140f` : `background:${L.color};border-color:${L.color}`)
+    : "";
+  const label = known ? s.n : (isActive ? "…" : "?");
+  const showChips = isHub && idx !== suppressCorrIdx && (known || state.corrMode === "hint");
+  const onclick = clickable ? (slotMode ? `onclick="onSlotClick(${idx})"` : `onclick="onDotClick(${idx})"`) : "";
+  return `<div class="${cls}" data-idx="${idx}" style="left:${_f(st.x)}px;top:${_f(st.y)}px" ${onclick}>
+      ${showChips ? corrChipsHtml(s.c, true) : ''}
+      <div class="dot"${dotStyle?` style="${dotStyle}"`:''}></div>
+      <div class="label">${label}</div>
+    </div>`;
+}
 
-  function stopHtml(s, idx, isTerminus, isFork, extraStyle){
-    if(!s) return `<div class="fstop"${extraStyle?` style="${extraStyle}"`:""}></div>`; // invisible spacer
-    const isHub = s.c.length>0;
-    const known = state.view==="solutions" || (slotMode ? !!state.placed[idx] : !!state.named[idx]);
-    const isActive = state.view!=="solutions" && !slotMode && state.activeIdx === idx;
-    let cls = "fstop" + ((isHub||isFork)?" hub":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"") + (isFork?" fork":"");
-    if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
-    const clickable = !known && (slotMode || state.pendingCorr===null);
-    if(clickable) cls += " slot";
-    if(state.flashWrong===idx) cls += " wrong-flash";
-    const dotStyle = known
-      ? ((isHub||isFork) ? `style="background:#fff;border-color:#14140f"` : `style="background:${L.color};border-color:${L.color}"`)
-      : "";
-    const label = known ? s.n : (isActive ? "…" : "?");
-    const showChips = isHub && idx !== suppressCorrIdx && (known || state.corrMode === "hint");
-    const onclick = clickable
-      ? (slotMode ? `onclick="onSlotClick(${idx})"` : `onclick="onDotClick(${idx})"`)
-      : "";
-    return `<div class="${cls}" data-idx="${idx}"${extraStyle?` style="${extraStyle}"`:""} ${onclick}>
-        ${showChips ? corrChipsHtml(s.c, true) : ''}
-        <div class="dot" ${dotStyle}></div>
-        <div class="label">${label}</div>
-      </div>`;
-  }
-
-  // Row layout uses flex row/row-reverse (per fork-side class on .fork-inner).
-  // DOM order is always trunk[0] first; with row-reverse (forkSide "left") that
-  // lands trunk[0] at the far right, with plain row (forkSide "right") at the
-  // far left. Canonical indices are unaffected either way.
-  let topHtml = `<div class="fstrip fstrip-top"><div class="spine" style="background:${L.color}"></div>`;
-  L.trunk.forEach((s,i)=>{ topHtml += stopHtml(s, i, i===0, i===forkSlot); });
-  L.branches.A.stations.forEach((s,j)=>{
-    topHtml += stopHtml(s, trunkLen+j, j===aLen-1, false);
-  });
-  topHtml += `</div>`;
-
-  // bottom row: forkSlot spacers sit under the trunk portion; branch B extends
-  // outward from the fork. The first B station gets a full-slot margin on the
-  // side facing the fork so it sits one cell away → the connector becomes a
-  // clearly sloped diagonal and its label doesn't collide with the trace.
-  // The margin side depends on the fork direction.
-  const bOffsetSide = forkSide === "left" ? "margin-right" : "margin-left";
-  let bottomHtml = `<div class="fstrip fstrip-bot"><div class="spine" style="background:${L.color}"></div>`;
-  for(let i=0;i<forkSlot;i++) bottomHtml += stopHtml(null, -1, false, false);
-  L.branches.B.stations.forEach((s,j)=>{
-    bottomHtml += stopHtml(s, trunkLen+aLen+j, j===bLen-1, false, j===0?`${bOffsetSide}:${FORK_SW.toFixed(0)}px`:"");
-  });
-  bottomHtml += `</div>`;
-
-  // Spines and the diagonal are positioned after layout (positions depend on
-  // real rendered dot coordinates). scheduleForkLayout runs on the next frame.
-  scheduleForkLayout(L.color);
-
-  return `<div class="fork-wrap"><div class="fork-inner fork-${forkSide}">
-    ${topHtml}
-    <div style="height:${FORK_ROW_GAP}px"></div>
-    ${bottomHtml}
+// assemble the SVG trace + station overlays + (loop) captions into a fork-wrap
+function traceStripHtml(L, g, slotMode){
+  const stopsHtml = g.stops.map(st=>traceStopHtml(st, slotMode)).join("");
+  const capsHtml = g.caps.map(c=>`<div class="loop-cap" style="left:${_f(c.x)}px;top:${_f(c.y)}px">${c.text}</div>`).join("");
+  const svg = `<svg class="line-svg" width="${_f(g.width)}" height="${_f(g.height)}" viewBox="0 0 ${_f(g.width)} ${_f(g.height)}">`
+    + `<path d="${g.d}" fill="none" stroke="${L.color}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  return `<div class="fork-wrap"><div class="fork-inner" style="width:${_f(g.width)}px;height:${_f(g.height)}px">
+    ${svg}${stopsHtml}${capsHtml}
   </div></div>`;
 }
 
-// Positions each row's spine to span exactly between its first & last real dots,
-// and draws the diagonal connector from the fork dot to the start of branch B.
-// On the finished screen we want the WHOLE plan visible at once (no scroll),
-// even for long lines (7, 9, 13...). Scale the strip down to fit the panel width.
-// We wait until the fork diagonal has been positioned (it's added by
-// scheduleForkLayout on a later frame) before measuring, then scale the whole
-// strip element — diagonal included — so everything stays aligned.
-function fitFinishedStrip(tries){
-  tries = tries || 0;
+function renderForkStrip(slotMode){
+  const L = LINES[state.lineKey];
+  return traceStripHtml(L, buildForkGeo(L), slotMode);
+}
+function renderLoopStrip(slotMode){
+  const L = LINES[state.lineKey];
+  return traceStripHtml(L, buildLoopGeo(L), slotMode);
+}
+
+// Scale a fork/loop (or finished/solutions) strip down so the whole plan fits the
+// panel width without horizontal scrolling. The trace has a fixed natural width,
+// so we just measure it against the available width and apply a CSS transform.
+function fitFinishedStrip(){
   requestAnimationFrame(()=>{
     const box = document.querySelector('.fit-strip');
     if(!box) return;
-    const isFork = !!box.querySelector('.fork-inner');
-    // for forked lines, wait until the diagonal has been drawn (up to ~10 frames)
-    if(isFork && !box.querySelector('.fork-diag') && tries < 10){
-      return fitFinishedStrip(tries+1);
-    }
     const scroller = box.querySelector('.fork-wrap');
     if(scroller) scroller.style.overflowX = 'visible';
     const content = box.querySelector('.fork-inner') || box.querySelector('.strip');
     if(!content) return;
-    // reset any previous scaling before measuring
     content.style.transform = '';
     box.style.height = '';
+    box.style.overflow = '';
     const avail = box.clientWidth;
     const natural = content.scrollWidth;
     const scale = (natural > avail && natural > 0) ? (avail / natural) : 1;
@@ -1614,224 +1642,6 @@ function fitFinishedStrip(tries){
       box.style.height = (content.getBoundingClientRect().height) + 'px';
       box.style.overflow = 'hidden';
     }
-  });
-}
-
-function scheduleForkLayout(color){
-  requestAnimationFrame(()=>{
-    const inner = document.querySelector('.fork-inner');
-    if(!inner) return;
-    // Measurements below use getBoundingClientRect, which is affected by any CSS
-    // scale on .fork-inner (applied on the finished screen by fitFinishedStrip).
-    // Temporarily clear the transform so all positions are computed in the
-    // element's own unscaled coordinate system; the finished-screen fit is
-    // re-applied afterwards.
-    const hadTransform = inner.style.transform;
-    if(hadTransform) inner.style.transform = '';
-    const wrap = inner.closest('.fork-wrap');
-    const irect = inner.getBoundingClientRect();
-    const cx = d => { const r=d.getBoundingClientRect(); return r.x + r.width/2 - irect.x; };
-
-    const topRow = inner.querySelector('.fstrip-top');
-    const botRow = inner.querySelector('.fstrip-bot');
-    if(!topRow || !botRow) return;
-
-    // real dots = those inside a .fstop that has a label (spacers have none)
-    const realDots = row => [...row.querySelectorAll('.fstop .dot')].filter(d=>d.parentElement.querySelector('.label'));
-
-    const topDots = realDots(topRow);
-    if(topDots.length){
-      const xs = topDots.map(cx);
-      const sp = topRow.querySelector('.spine');
-      sp.style.left = Math.min(...xs)+'px';
-      sp.style.width = (Math.max(...xs)-Math.min(...xs))+'px';
-    }
-    const botDots = realDots(botRow);
-    let bmax = null;
-    if(botDots.length){
-      const xs = botDots.map(cx);
-      bmax = Math.max(...xs);
-      const sp = botRow.querySelector('.spine');
-      sp.style.left = Math.min(...xs)+'px';
-      sp.style.width = (bmax-Math.min(...xs))+'px';
-    }
-
-    // diagonal connector between the fork dot (top row) and branch B's first
-    // dot (bottom row). Draw it from the branch-B end up to the fork, anchored
-    // at that lower point, so the rotation direction is unambiguous. The B start
-    // dot is the one nearest the fork: rightmost for a left-fork (line 13),
-    // leftmost for a right-fork (line 7).
-    const forkLeft = inner.classList.contains('fork-left');
-    const forkDot = topRow.querySelector('.fstop.fork .dot');
-    inner.querySelectorAll('.fork-diag').forEach(el=>el.remove());
-    const bStartDot = botDots.length
-      ? botDots.reduce((a,b)=> (forkLeft ? cx(a)>cx(b) : cx(a)<cx(b)) ? a : b)
-      : null;
-    if(forkDot && bStartDot){
-      const fx = cx(forkDot), fy = FORK_TOP_PAD;
-      const bx = cx(bStartDot), by = botRow.offsetTop + FORK_TOP_PAD;
-      const dx = fx - bx, dy = fy - by;                 // from branch-B start → fork
-      const len = Math.hypot(dx,dy), ang = Math.atan2(dy,dx)*180/Math.PI;
-      const diag = document.createElement('div');
-      diag.className = 'fork-diag';
-      diag.style.left = bx+'px';
-      diag.style.top = by+'px';
-      diag.style.width = len+'px';
-      diag.style.background = color;
-      diag.style.transform = `translateY(-50%) rotate(${ang}deg)`;
-      inner.appendChild(diag);
-    }
-
-    // Only allow horizontal scrolling if the content genuinely overflows.
-    // Prevents an always-visible empty scrollbar (e.g. macOS "always show").
-    if(wrap){
-      wrap.style.overflowX = (inner.scrollWidth > wrap.clientWidth + 1) ? "auto" : "hidden";
-      // restore the scroll position captured before the re-render (clamped to range)
-      const maxScroll = Math.max(0, inner.scrollWidth - wrap.clientWidth);
-      wrap.scrollLeft = Math.min(_forkScrollLeft, maxScroll);
-    }
-    // if we cleared a finished-screen scale to measure, recompute the fit now
-    if(hadTransform) fitFinishedStrip();
-  });
-}
-
-/* ---------- Loop line (line 10 — Auteuil loop): west trunk + two one-way arcs + east trunk ----------
-   Three stacked rows: north arc (top, served only toward Boulogne), the bidirectional
-   trunks on a split middle spine (west | lens gap | east), south arc (bottom, served only
-   toward Austerlitz). Canonical indices follow the `stations` getter: west, south, north, east. */
-function renderLoopStrip(slotMode){
-  const L = LINES[state.lineKey];
-  const wLen=L.westTrunk.length, sLen=L.loopSouth.length, nLen=L.loopNorth.length, eLen=L.eastTrunk.length;
-  const IDX = { south:wLen, north:wLen+sLen, east:wLen+sLen+nLen };
-  const suppressCorrIdx = (state.pendingCorr !== null && !state.corrChecked) ? state.pendingCorr : -1;
-
-  function stopHtml(s, idx, isTerminus, isJunction){
-    if(!s) return `<div class="fstop"></div>`; // invisible spacer
-    const isHub = s.c.length>0;
-    const known = state.view==="solutions" || (slotMode ? !!state.placed[idx] : !!state.named[idx]);
-    const isActive = state.view!=="solutions" && !slotMode && state.activeIdx === idx;
-    let cls = "fstop" + ((isHub||isJunction)?" hub":"") + (isJunction?" fork":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"");
-    if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
-    const clickable = !known && (slotMode || state.pendingCorr===null);
-    if(clickable) cls += " slot";
-    if(state.flashWrong===idx) cls += " wrong-flash";
-    const dotStyle = known
-      ? ((isHub||isJunction) ? `style="background:#fff;border-color:#14140f"` : `style="background:${L.color};border-color:${L.color}"`)
-      : "";
-    const label = known ? s.n : (isActive ? "\u2026" : "?");
-    const showChips = isHub && idx !== suppressCorrIdx && (known || state.corrMode === "hint");
-    const onclick = clickable ? (slotMode ? `onclick="onSlotClick(${idx})"` : `onclick="onDotClick(${idx})"`) : "";
-    return `<div class="${cls}" data-idx="${idx}" ${onclick}>
-        ${showChips ? corrChipsHtml(s.c, true) : ''}
-        <div class="dot" ${dotStyle}></div>
-        <div class="label">${label}</div>
-      </div>`;
-  }
-
-  // TOP row: spacers under west trunk, north arc, spacers under east trunk
-  let topHtml = `<div class="fstrip fstrip-top"><div class="spine" style="background:${L.color}"></div>`;
-  for(let i=0;i<wLen;i++) topHtml += stopHtml(null);
-  L.loopNorth.forEach((s,k)=> topHtml += stopHtml(s, IDX.north+k, false, false));
-  for(let i=0;i<eLen;i++) topHtml += stopHtml(null);
-  topHtml += `</div>`;
-
-  // MID row: west trunk | lens gap | east trunk. Two spines (west, east). The last west
-  // station (Boulogne–J.J.) and first east station (Javel) are the junction dots.
-  let midHtml = `<div class="fstrip fstrip-mid"><div class="spine spine-west" style="background:${L.color}"></div><div class="spine spine-east" style="background:${L.color}"></div>`;
-  L.westTrunk.forEach((s,i)=> midHtml += stopHtml(s, i, i===0, i===wLen-1));
-  for(let i=0;i<sLen;i++) midHtml += stopHtml(null);
-  L.eastTrunk.forEach((s,m)=> midHtml += stopHtml(s, IDX.east+m, m===eLen-1, m===0));
-  midHtml += `</div>`;
-
-  // BOT row: spacers, south arc, spacers
-  let botHtml = `<div class="fstrip fstrip-bot"><div class="spine" style="background:${L.color}"></div>`;
-  for(let i=0;i<wLen;i++) botHtml += stopHtml(null);
-  L.loopSouth.forEach((s,j)=> botHtml += stopHtml(s, IDX.south+j, false, false));
-  for(let i=0;i<eLen;i++) botHtml += stopHtml(null);
-  botHtml += `</div>`;
-
-  scheduleLoopLayout(L.color);
-
-  return `<div class="fork-wrap"><div class="fork-inner fork-right loop-inner">
-    ${topHtml}
-    <div style="height:${FORK_ROW_GAP}px"></div>
-    ${midHtml}
-    <div style="height:${FORK_ROW_GAP}px"></div>
-    ${botHtml}
-  </div></div>`;
-}
-
-// Positions the three spines (top arc, split middle trunk, bottom arc), draws the four
-// divergence/convergence diagonals at the two junctions, and the one-way captions. Like
-// scheduleForkLayout, it measures real rendered dot coordinates on the next frame.
-function scheduleLoopLayout(color){
-  requestAnimationFrame(()=>{
-    const inner = document.querySelector('.loop-inner');
-    if(!inner) return;
-    const hadTransform = inner.style.transform;
-    if(hadTransform) inner.style.transform = '';
-    const wrap = inner.closest('.fork-wrap');
-    const irect = inner.getBoundingClientRect();
-    const cx = d => { const r=d.getBoundingClientRect(); return r.x + r.width/2 - irect.x; };
-    const topRow = inner.querySelector('.fstrip-top');
-    const midRow = inner.querySelector('.fstrip-mid');
-    const botRow = inner.querySelector('.fstrip-bot');
-    if(!topRow||!midRow||!botRow) return;
-    const realDots = row => [...row.querySelectorAll('.fstop .dot')].filter(d=>d.parentElement.querySelector('.label'));
-    const spanSpine = (spine, dots) => {
-      if(!spine || !dots.length) return;
-      const xs = dots.map(cx);
-      spine.style.left = Math.min(...xs)+'px';
-      spine.style.width = (Math.max(...xs)-Math.min(...xs))+'px';
-    };
-    const L = LINES[state.lineKey];
-    const wLen = L.westTrunk.length;
-    const midDots = realDots(midRow);
-    spanSpine(topRow.querySelector('.spine'), realDots(topRow));
-    spanSpine(botRow.querySelector('.spine'), realDots(botRow));
-    spanSpine(midRow.querySelector('.spine-west'), midDots.slice(0,wLen));
-    spanSpine(midRow.querySelector('.spine-east'), midDots.slice(wLen));
-
-    const yOf = row => row.offsetTop + FORK_TOP_PAD;
-    const yTop=yOf(topRow), yMid=yOf(midRow), yBot=yOf(botRow);
-    const dotByIdx = i => inner.querySelector(`.fstop[data-idx="${i}"] .dot`);
-    const xOf = i => { const d=dotByIdx(i); return d?cx(d):null; };
-    inner.querySelectorAll('.fork-diag,.loop-cap').forEach(el=>el.remove());
-    const drawDiag = (ax,ay,bx,by) => {
-      const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy), ang=Math.atan2(dy,dx)*180/Math.PI;
-      const d=document.createElement('div'); d.className='fork-diag loop-diag';
-      d.style.left=ax+'px'; d.style.top=ay+'px'; d.style.width=len+'px'; d.style.background=color;
-      d.style.transform=`translateY(-50%) rotate(${ang}deg)`;
-      inner.appendChild(d);
-    };
-    const bjj=wLen-1, javel=wLen+L.loopSouth.length+L.loopNorth.length;
-    const sFirst=wLen, sLast=wLen+L.loopSouth.length-1;
-    const nFirst=wLen+L.loopSouth.length, nLast=nFirst+L.loopNorth.length-1;
-    const bjjX=xOf(bjj), javelX=xOf(javel);
-    if(bjjX!=null){
-      if(xOf(nFirst)!=null) drawDiag(xOf(nFirst), yTop, bjjX, yMid);
-      if(xOf(sFirst)!=null) drawDiag(xOf(sFirst), yBot, bjjX, yMid);
-    }
-    if(javelX!=null){
-      if(xOf(nLast)!=null) drawDiag(xOf(nLast), yTop, javelX, yMid);
-      if(xOf(sLast)!=null) drawDiag(xOf(sLast), yBot, javelX, yMid);
-    }
-    const cap = (x,y,txt,dir) => {
-      const c=document.createElement('div'); c.className='loop-cap';
-      c.textContent = dir==='left' ? ('\u25C0 '+txt) : (txt+' \u25B6');
-      c.style.left=x+'px'; c.style.top=y+'px'; inner.appendChild(c);
-    };
-    const topDots=realDots(topRow), botDots=realDots(botRow);
-    const endW = L.loopEndW || L.westTrunk[0].n, endE = L.loopEndE || L.eastTrunk[L.eastTrunk.length-1].n;
-    if(topDots.length){ const xs=topDots.map(cx); cap((Math.min(...xs)+Math.max(...xs))/2, yTop-30, 'sens unique \u00B7 vers '+endW,'left'); }
-    if(botDots.length){ const xs=botDots.map(cx); cap((Math.min(...xs)+Math.max(...xs))/2, yBot+26, 'sens unique \u00B7 vers '+endE,'right'); }
-
-    if(wrap){
-      wrap.style.overflowX = (inner.scrollWidth > wrap.clientWidth + 1) ? "auto" : "hidden";
-      const maxScroll = Math.max(0, inner.scrollWidth - wrap.clientWidth);
-      wrap.scrollLeft = Math.min(_forkScrollLeft, maxScroll);
-    }
-    if(hadTransform) fitFinishedStrip();
   });
 }
 
@@ -1934,16 +1744,15 @@ function renderStrip(slotMode){
 // last cell's right edge (not its dot) sits at the strip's right edge. The
 // .spine's CSS defaults (left:34px/right:60px) were a rough guess tuned for a
 // mid-size station count, so it overshoots past the terminus dot on lines
-// with fewer/wider cells. Measure the real first/last dot positions instead
-// (same approach as scheduleForkLayout/scheduleLoopLayout) so the spine always
-// ends exactly at the terminus, regardless of station count.
+// with fewer/wider cells. Measure the real first/last dot positions instead so
+// the spine always ends exactly at the terminus, regardless of station count.
 function scheduleSimpleLayout(){
   requestAnimationFrame(()=>{
     const strip = document.querySelector('.strip');
     if(!strip) return;
     const spine = strip.querySelector(':scope > .spine');
     if(!spine) return;
-    // clear any finished-screen scale before measuring, like scheduleForkLayout does
+    // clear any finished-screen scale before measuring
     const hadTransform = strip.style.transform;
     if(hadTransform) strip.style.transform = '';
     const srect = strip.getBoundingClientRect();
@@ -1957,13 +1766,6 @@ function scheduleSimpleLayout(){
 }
 
 function render(){
-  // Preserve horizontal scroll of the forked-line strip across re-renders:
-  // every click rebuilds #panel (recreating .fork-wrap), which would otherwise
-  // reset scrollLeft to 0. scheduleForkLayout restores it after the new strip
-  // is laid out.
-  const prevWrap = document.querySelector(".fork-wrap");
-  _forkScrollLeft = prevWrap ? prevWrap.scrollLeft : _forkScrollLeft;
-
   renderNav();
   const panel = document.getElementById("panel");
   const note = document.getElementById("note");
@@ -2818,9 +2620,8 @@ loadStore();
 resetLine();
 render();
 
-// Every line strip (simple, forked, loop) positions its spine/diagonals in
-// absolute pixels based on measured dot coordinates, so it must be recomputed
-// when the viewport changes.
+// On viewport resize: simple lines re-measure their (flex-based) spine; fork/loop
+// lines have a fixed-width SVG trace, so they only need the scale-to-fit recomputed.
 let _resizeRaf = null;
 window.addEventListener("resize", ()=>{
   if(!LINES[state.lineKey]) return;
@@ -2829,9 +2630,7 @@ window.addEventListener("resize", ()=>{
   if(_resizeRaf) cancelAnimationFrame(_resizeRaf);
   _resizeRaf = requestAnimationFrame(()=>{
     const _L=LINES[state.lineKey];
-    if(_L.loop) scheduleLoopLayout(_L.color);
-    else if(_L.branches) scheduleForkLayout(_L.color);
-    else scheduleSimpleLayout();
+    if(!_L.loop && !_L.branches) scheduleSimpleLayout();
     // whenever a strip is wrapped for scale-to-fit (finished screen, solutions,
     // or a fork/loop line in training), recompute that fit for the new width
     if(document.querySelector('.fit-strip')) fitFinishedStrip();
