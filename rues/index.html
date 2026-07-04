@@ -21,6 +21,11 @@
   .stage{display:grid;grid-template-columns:1fr 340px;height:100vh}
   .map-wrap{background:var(--outside);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
   .map-wrap::after{content:attr(data-arr);position:absolute;right:18px;bottom:10px;font:600 13px ui-monospace,Menlo,monospace;color:var(--ink-soft);letter-spacing:.08em}
+  .tooltip{position:absolute;top:0;left:0;pointer-events:none;z-index:5;background:var(--panel-2);color:var(--panel-text);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:12.5px;line-height:1.5;box-shadow:0 10px 26px rgba(0,0,0,.4);max-width:260px;opacity:0;transform:translate(-9999px,-9999px);transition:opacity .08s ease}
+  .tooltip.show{opacity:1}
+  .tt-row+.tt-row{margin-top:6px;padding-top:6px;border-top:1px solid var(--line)}
+  .tt-name{font-weight:600;display:block}
+  .tt-cat{color:var(--panel-dim);font:500 10px ui-monospace,Menlo,monospace;text-transform:uppercase;letter-spacing:.05em;display:block;margin-top:1px}
   svg#map{width:100%;height:100%;display:block}
   .contour-fill{fill:var(--paper);stroke:none}
   .seine{fill:var(--seine);stroke:none;opacity:.92}
@@ -45,8 +50,12 @@
 
   /* Panneau */
   .panel{background:var(--panel);color:var(--panel-text);display:flex;flex-direction:column;padding:22px 22px 18px;gap:18px;overflow-y:auto}
-  .brand{font:600 13px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--panel-dim)}
+  .brand{font:600 13px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--panel-dim);display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .brand a{color:inherit;text-decoration:none}
   .brand b{color:var(--accent);font-weight:600}
+  .brand-nav{display:flex;gap:10px;letter-spacing:.08em}
+  .brand-nav a{color:var(--panel-dim);text-decoration:underline;text-decoration-color:transparent;transition:text-decoration-color .12s}
+  .brand-nav a:hover{text-decoration-color:var(--panel-dim)}
   .prompt{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:18px 0}
   #prompt-kind{font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--panel-dim)}
   #prompt-name{font-size:25px;font-weight:600;line-height:1.15;margin:9px 0 10px;letter-spacing:-.01em}
@@ -60,9 +69,10 @@
   .arr-select{width:100%;font-family:inherit;font-size:13px;font-weight:500;border:1px solid var(--line);background:var(--panel-2);color:var(--panel-text);border-radius:8px;padding:9px 11px;cursor:pointer}
   .arr-select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   #idk{flex:1}
-  #toggle{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center}
-  #toggle::after{content:"changer";font:500 11px ui-monospace,Menlo,monospace;color:var(--panel-dim)}
-  #toggle[data-mode="AB"]{border-color:var(--accent)}
+  #solution-toggle{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center}
+  #solution-toggle::after{content:"activer";font:500 11px ui-monospace,Menlo,monospace;color:var(--panel-dim)}
+  #solution-toggle[data-on="1"]{border-color:var(--accent)}
+  #solution-toggle[data-on="1"]::after{content:"désactiver";color:var(--accent)}
   .opts{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--panel-dim)}
   .opts label{display:flex;align-items:center;gap:7px;cursor:pointer}
   .opts a{color:var(--panel-dim);text-decoration:underline;cursor:pointer;background:none;border:none;font:inherit;padding:0}
@@ -81,9 +91,18 @@
 </head>
 <body>
   <div class="stage">
-    <div class="map-wrap"><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <div class="map-wrap">
+      <svg id="map" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="tooltip" class="tooltip"></div>
+    </div>
     <aside class="panel">
-      <div class="brand"><b>Plan Vierge</b></div>
+      <div class="brand">
+        <a href="../"><b>Plan Vierge</b></a>
+        <nav class="brand-nav">
+          <a href="../">Accueil</a>
+          <a href="../metro/">Métro</a>
+        </nav>
+      </div>
       <select id="arr-select" class="arr-select" aria-label="Arrondissement"></select>
       <div class="prompt">
         <div id="prompt-kind">Pointez la voie</div>
@@ -95,7 +114,7 @@
         <button id="idk">Je ne sais pas</button>
         <button id="restart">Nouveau tour</button>
       </div>
-      <button id="toggle" data-mode="A">Palier A</button>
+      <button id="solution-toggle" data-on="0">Mode solution</button>
       <div class="opts">
         <label><input type="checkbox" id="hide"> Cacher les trouvées</label>
         <button class="resetlink" id="reset">réinitialiser</button>
@@ -278,7 +297,7 @@
   }
 
   // ---------- Rendu SVG ----------
-  let svg;
+  let svg, tooltip;
   function el(tag, attrs) {
     const e = document.createElementNS(NS, tag);
     for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -323,20 +342,18 @@
   function setClass(t, cls) { t.els.forEach(e => { e.setAttribute("class", e.getAttribute("class").replace(/ (hi|ok|err|reveal|mastered)/g, "") + (cls ? " " + cls : "")); }); }
 
   // ---------- État de jeu ----------
-  let mode = "A";            // "A" ou "AB"
+  let solutionMode = false;
   let hideMastered = false;
   let mastered = loadMastered();
   let queue = [], qi = 0, current = null, found = 0, totalRound = 0;
   let hi = [], busy = false;
 
   function activePool() {
-    return targets.filter(t => (t.kind === "poi" || t.tier === "A" || mode === "AB"));
+    return targets;
   }
   function refreshBase() {
     // remet tout à l'état de base, marque les maîtrisées en vert
     targets.forEach(t => {
-      const visible = (t.kind === "poi" || t.tier === "A" || mode === "AB");
-      t.els.forEach(e => e.style.display = visible ? "" : "none");
       setClass(t, mastered.has(masteredKey(t.name)) ? "mastered" : "");
     });
   }
@@ -348,14 +365,14 @@
     if (hideMastered) pool = pool.filter(t => !mastered.has(masteredKey(t.name)));
     queue = shuffle(pool.slice()); qi = 0; found = 0; totalRound = queue.length;
     updateCounters();
-    if (!queue.length) { showPrompt(null); return; }
+    if (!queue.length) { if (!solutionMode) showPrompt(null); return; }
     next();
   }
   function next() {
     clearHi();
-    if (qi >= queue.length) { current = null; showPrompt("done"); return; }
+    if (qi >= queue.length) { current = null; if (!solutionMode) showPrompt("done"); return; }
     current = queue[qi];
-    showPrompt(current);
+    if (!solutionMode) showPrompt(current);
     setMsg("");
   }
   function showPrompt(t) {
@@ -372,6 +389,26 @@
     const e = document.getElementById("msg");
     e.textContent = m; e.setAttribute("data-kind", kind || "");
   }
+  function showTooltip(hits, evt) {
+    if (!hits.length) { hideTooltip(); return; }
+    tooltip.innerHTML = "";
+    hits.forEach(t => {
+      const row = document.createElement("div"); row.className = "tt-row";
+      const name = document.createElement("span"); name.className = "tt-name"; name.textContent = t.name;
+      const cat = document.createElement("span"); cat.className = "tt-cat"; cat.textContent = t.category;
+      row.appendChild(name); row.appendChild(cat);
+      tooltip.appendChild(row);
+    });
+    tooltip.classList.add("show");
+    const wrap = document.querySelector(".map-wrap").getBoundingClientRect();
+    let x = evt.clientX - wrap.left + 16;
+    let y = evt.clientY - wrap.top + 16;
+    const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+    if (x + tw > wrap.width) x = evt.clientX - wrap.left - tw - 16;
+    if (y + th > wrap.height) y = evt.clientY - wrap.top - th - 16;
+    tooltip.style.transform = `translate(${Math.max(0, x)}px, ${Math.max(0, y)}px)`;
+  }
+  function hideTooltip() { tooltip.classList.remove("show"); }
 
   // ---------- Interactions ----------
   function svgPoint(evt) {
@@ -395,9 +432,23 @@
     for (const t of pool) { const d = t.dist(mx, my); if (d < bd) { bd = d; best = t; } }
     return (best && bd <= HIT) ? [best] : [];
   }
+  function solutionCandidates(mx, my) {
+    return targets.filter(t => t.dist(mx, my) <= HIT);
+  }
   function onMove(evt) {
-    if (busy || !current) return;
     const [mx, my] = svgPoint(evt);
+    if (solutionMode) {
+      const cand = solutionCandidates(mx, my);
+      if (!sameSet(cand, hi)) {
+        clearHi();
+        cand.forEach(t => setClass(t, "hi"));
+        hi = cand;
+      }
+      svg.style.cursor = cand.length ? "pointer" : "default";
+      showTooltip(cand, evt);
+      return;
+    }
+    if (busy || !current) return;
     const cand = candidates(mx, my);
     if (sameSet(cand, hi)) return;
     clearHi();
@@ -406,6 +457,7 @@
     svg.style.cursor = cand.length ? "pointer" : "default";
   }
   function onClick() {
+    if (solutionMode) return;
     if (busy || !current || !hi.length) return;
     if (hi.indexOf(current) >= 0) {
       busy = true;
@@ -421,7 +473,7 @@
     }
   }
   function onIDK() {
-    if (busy || !current) return;
+    if (solutionMode || busy || !current) return;
     busy = true; clearHi();
     setClass(current, "reveal"); setMsg("C’était : " + current.name, "reveal");
     const cur = current;
@@ -478,15 +530,31 @@
   // ---------- Init ----------
   function init() {
     svg = document.getElementById("map");
+    tooltip = document.getElementById("tooltip");
     svg.addEventListener("mousemove", onMove);
     svg.addEventListener("click", onClick);
+    svg.addEventListener("mouseleave", function () {
+      if (!solutionMode) return;
+      clearHi(); hi = []; hideTooltip(); svg.style.cursor = "default";
+    });
     document.getElementById("idk").addEventListener("click", onIDK);
     document.getElementById("restart").addEventListener("click", startRound);
-    document.getElementById("toggle").addEventListener("click", function () {
-      mode = mode === "A" ? "AB" : "A";
-      this.textContent = mode === "A" ? "Palier A" : "Palier A + B";
-      this.setAttribute("data-mode", mode);
-      startRound();
+    document.getElementById("solution-toggle").addEventListener("click", function () {
+      solutionMode = !solutionMode;
+      this.setAttribute("data-on", solutionMode ? "1" : "0");
+      clearHi(); hi = []; hideTooltip(); svg.style.cursor = "default";
+      if (solutionMode) {
+        setMsg("");
+        document.getElementById("prompt-kind").textContent = "Mode solution";
+        document.getElementById("prompt-name").textContent = "Survolez la carte";
+        document.getElementById("prompt-cat").textContent = "";
+      } else if (current) {
+        showPrompt(current);
+      } else if (queue.length && qi >= queue.length) {
+        showPrompt("done");
+      } else {
+        showPrompt(null);
+      }
     });
     document.getElementById("hide").addEventListener("change", function () { hideMastered = this.checked; startRound(); });
     document.getElementById("reset").addEventListener("click", function () {
