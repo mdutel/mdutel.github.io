@@ -47,16 +47,23 @@
     font-size: 11px; letter-spacing: 0.1em; color:#9a9a92; text-transform:uppercase;
   }
 
-  /* line tabs */
-  .tabs{ display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
-  .tab{
-    border: none; cursor:pointer; padding: 9px 16px;
-    font-weight:700; font-size:13px; letter-spacing:0.04em;
-    border-radius: 999px; color:#fff; opacity:0.45;
-    transition: opacity .15s, transform .1s;
+  /* line tabs — RATP-style number badges, one row, no wrap, evenly filling the row */
+  .tabs{ display:flex; gap:6px; margin-bottom:14px; flex-wrap:nowrap; overflow-x:auto; padding:4px 2px; }
+  .tabs::-webkit-scrollbar{ height:6px; }
+  .tabs::-webkit-scrollbar-thumb{ background:#2a313c; border-radius:3px; }
+  .tab-card{
+    flex:1 1 0; min-width:40px; padding:4px; border-radius:12px;
+    display:flex; align-items:center; justify-content:center;
   }
-  .tab.active{ opacity:1; box-shadow: 0 0 0 2px rgba(255,255,255,0.6) inset; }
-  .tab:active{ transform: scale(0.97); }
+  .tab-card.active{ background:#f7f5ef; box-shadow:0 2px 8px rgba(0,0,0,0.35); }
+  .tab-badge{
+    width:100%; max-width:60px; aspect-ratio:1/1; border:none; border-radius:50%; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:1px;
+    font-weight:800; transition: transform .1s;
+  }
+  .tab-badge .num{ font-size:22px; line-height:1; }
+  .tab-badge .bis{ font-size:11px; line-height:1; align-self:flex-end; margin-bottom:3px; }
+  .tab-badge:active{ transform: scale(0.92); }
 
   /* mode toggle */
   .modes{ display:flex; gap:8px; margin-bottom:20px; }
@@ -1397,18 +1404,33 @@ function renderOpts(){
     `</div>`;
 }
 
+// display order for the line-selector badges: bis lines sit right after their
+// parent line (3, 3bis, 4...), unlike Object.keys(LINES) which — since JS
+// always iterates integer-like string keys in numeric order first — would
+// push "3bis"/"7bis" to the very end.
+const LINE_ORDER = ["1","2","3","3bis","4","5","6","7","7bis","8","9","10","11","12","13","14"];
+
 function renderTabs(){
   const tabs = document.getElementById("tabs");
   tabs.innerHTML = "";
-  Object.keys(LINES).forEach(key=>{
+  LINE_ORDER.forEach(key=>{
     const L = LINES[key];
+    const isBis = key.endsWith("bis");
+    const num = isBis ? key.slice(0, -3) : key;
+
+    const card = document.createElement("div");
+    card.className = "tab-card" + (state.lineKey===key ? " active" : "");
+
     const b = document.createElement("button");
-    b.className = "tab" + (state.lineKey===key ? " active":"");
+    b.className = "tab-badge";
     b.style.background = L.color;
     b.style.color = (key==="1") ? "#14140f" : "#fff";
-    b.textContent = L.name;
+    b.title = L.name;
     b.onclick = ()=>setLine(key);
-    tabs.appendChild(b);
+    b.innerHTML = `<span class="num">${num}</span>` + (isBis ? `<span class="bis">b</span>` : "");
+
+    card.appendChild(b);
+    tabs.appendChild(card);
   });
 }
 
@@ -1458,6 +1480,7 @@ function renderNav(){
     `<button class="nav-btn review ${state.view==='review'?'active':''}" ${dueCount===0?'disabled':''} onclick="goView('review')">À réviser · ${dueCount}</button>` +
     `<button class="nav-btn ${state.view==='stats'?'active':''}" onclick="goView('stats')">Stats</button>` +
     `<button class="nav-btn ${state.view==='history'?'active':''}" onclick="goView('history')">Historique</button>` +
+    `<button class="nav-btn ${state.view==='solutions'?'active':''}" onclick="goView('solutions')">Solutions</button>` +
     `<span class="nav-sep"></span>` +
     `<button class="nav-btn ghost" onclick="exportHistory()">Exporter</button>` +
     `<label class="nav-btn ghost">Importer<input type="file" accept="application/json,.json" style="display:none" onchange="importHistory(this.files[0]); this.value='';"></label>` +
@@ -1501,8 +1524,8 @@ function renderForkStrip(slotMode){
   function stopHtml(s, idx, isTerminus, isFork, extraStyle){
     if(!s) return `<div class="fstop"${extraStyle?` style="${extraStyle}"`:""}></div>`; // invisible spacer
     const isHub = s.c.length>0;
-    const known = slotMode ? !!state.placed[idx] : !!state.named[idx];
-    const isActive = !slotMode && state.activeIdx === idx;
+    const known = state.view==="solutions" || (slotMode ? !!state.placed[idx] : !!state.named[idx]);
+    const isActive = state.view!=="solutions" && !slotMode && state.activeIdx === idx;
     let cls = "fstop" + ((isHub||isFork)?" hub":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"") + (isFork?" fork":"");
     if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
     const clickable = !known && (slotMode || state.pendingCorr===null);
@@ -1685,8 +1708,8 @@ function renderLoopStrip(slotMode){
   function stopHtml(s, idx, isTerminus, isJunction){
     if(!s) return `<div class="fstop"></div>`; // invisible spacer
     const isHub = s.c.length>0;
-    const known = slotMode ? !!state.placed[idx] : !!state.named[idx];
-    const isActive = !slotMode && state.activeIdx === idx;
+    const known = state.view==="solutions" || (slotMode ? !!state.placed[idx] : !!state.named[idx]);
+    const isActive = state.view!=="solutions" && !slotMode && state.activeIdx === idx;
     let cls = "fstop" + ((isHub||isJunction)?" hub":"") + (isJunction?" fork":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"");
     if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
     const clickable = !known && (slotMode || state.pendingCorr===null);
@@ -1819,6 +1842,17 @@ function renderLineStrip(slotMode){
   return L.branches ? renderForkStrip(slotMode) : renderStrip(slotMode);
 }
 
+// read-only answer key: every station name & correspondence always shown,
+// nothing clickable. Reuses the same strip renderers (they check
+// state.view==="solutions" to force every stop "known") and the finished-
+// screen scale-to-fit so long lines display without horizontal scroll.
+function renderSolutions(panel, note){
+  const L = LINES[state.lineKey];
+  panel.innerHTML = `<div class="fit-strip">${renderLineStrip(false)}</div>`;
+  note.textContent = `Solution — ${L.name} : toutes les stations et correspondances.`;
+  fitFinishedStrip();
+}
+
 // panel-head terminus display: normal lines show "A → B"; forked lines show
 // the shared southern terminus plus both northern branch termini.
 function panelHeadHtml(lineKey){
@@ -1857,8 +1891,8 @@ function renderStrip(slotMode){
     <div class="spine" style="background:${L.color}"></div>`;
   L.stations.forEach((s,i)=>{
     const isHub = s.c.length>0;
-    const known = slotMode ? !!state.placed[i] : !!state.named[i];
-    const isActive = !slotMode && state.activeIdx === i;
+    const known = state.view==="solutions" || (slotMode ? !!state.placed[i] : !!state.named[i]);
+    const isActive = state.view!=="solutions" && !slotMode && state.activeIdx === i;
     const isTerminus = (i===0 || i===L.stations.length-1);
     let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"");
     if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
@@ -1900,12 +1934,23 @@ function render(){
   if(state.view === "review"){ chrome.style.display = "none"; renderReview(panel, note); return; }
   if(state.view === "history"){ chrome.style.display = "none"; renderHistory(panel, note); return; }
   if(state.view === "stats"){ chrome.style.display = "none"; renderStats(panel, note); return; }
+  if(state.view === "solutions"){
+    chrome.style.display = "";
+    renderTabs();
+    document.getElementById("modes").style.display = "none";
+    document.getElementById("optsRow").style.display = "none";
+    document.getElementById("reviewBanner").innerHTML = "";
+    document.getElementById("scorebar").innerHTML = "";
+    renderSolutions(panel, note);
+    return;
+  }
 
   // training view
   chrome.style.display = "";
   renderTabs();
   renderModes();
   renderOpts();
+  document.getElementById("modes").style.display = "";
   document.getElementById("optsRow").style.display = (state.mode==="carte") ? "none" : "";
   document.getElementById("reviewBanner").innerHTML = "";
   if(state.mode === "carte"){ document.getElementById("scorebar").innerHTML = ""; renderCarte(panel, note); return; }
@@ -2737,13 +2782,14 @@ render();
 let _resizeRaf = null;
 window.addEventListener("resize", ()=>{
   if(!LINES[state.lineKey] || (!LINES[state.lineKey].branches && !LINES[state.lineKey].loop)) return;
-  if(state.view !== "train" || state.mode === "carte") return;
+  if(state.view === "train" && state.mode === "carte") return;
+  if(state.view !== "train" && state.view !== "solutions") return;
   if(_resizeRaf) cancelAnimationFrame(_resizeRaf);
   _resizeRaf = requestAnimationFrame(()=>{
     const _L=LINES[state.lineKey];
     (_L.loop ? scheduleLoopLayout : scheduleForkLayout)(_L.color);
-    // on the finished screen the strip is scaled to fit; recompute that fit too
-    if(state.phase === "finished") fitFinishedStrip();
+    // on the finished screen and the solutions view the strip is scaled to fit; recompute that
+    if(state.view === "solutions" || state.phase === "finished") fitFinishedStrip();
   });
 });
 </script>
