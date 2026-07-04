@@ -1171,7 +1171,8 @@ let state = {
   // cross-line review session
   rev: null,           // {queue:[{line,idx,name}], pos, results:[], wrong, revealed, phase}
   map: null,           // carte session {queue:[idx], pos, results:[{name,dist}], phase, click, answered}
-  mapTrace: false,     // carte: show the selected line's route as a hint
+  mapLineStyle: "none", // carte: hint level for other lines' routes — "none" | "gray" | "color"
+  mapShowStops: false, // carte: show station dot markers along the hint lines
   feedback: null
 };
 
@@ -1892,11 +1893,16 @@ function buildMapSvg(opts){
     const label = it.skip ? '' : `<text x="${it.tx.toFixed(1)}" y="${it.ty.toFixed(1)}" font-size="10" text-anchor="${it.anchor}" fill="${col}">${it.p.n}</text>`;
     return `<g>${mark}${label}</g>`;
   }).join('') + `</g>`;
-  // optional trace: ALL lines' routes WITH station dots (context/hint), muted colour, non-interactive
-  if(opts.trace){
+  // optional hint layer: ALL lines' routes (colour or neutral grey) and/or station dot
+  // markers, drawn independently so either can be toggled on its own, non-interactive
+  const NEUTRAL_LINE = "#8a8578";
+  const lineStyle = opts.lineStyle || "none";
+  if(lineStyle !== "none" || opts.showStops){
     s += `<g style="pointer-events:none">`;
     Object.keys(LINES).forEach(lk=>{
       const L=LINES[lk];
+      const strokeCol = lineStyle === "color" ? L.color : NEUTRAL_LINE;
+      const dotCol = lineStyle === "color" ? L.color : NEUTRAL_LINE;
       // forked lines (e.g. line 13) draw as two segments (trunk+branchA, trunk+branchB)
       // rather than one continuous line, since the branches physically diverge.
       const segments = L.branches
@@ -1907,11 +1913,11 @@ function buildMapSvg(opts){
           : [lineAllStations(lk)];
       segments.forEach(segStations=>{
         const pts=segStations.map(st=>GEO.stations[st.n]).filter(Boolean);
-        if(pts.length>1){
+        if(lineStyle !== "none" && pts.length>1){
           const dpath=pts.map((p,i)=>{ const [x,y]=MAP.project(p[0],p[1]); return (i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1); }).join('');
-          s += `<path d="${dpath}" fill="none" stroke="${L.color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="0.3"/>`;
+          s += `<path d="${dpath}" fill="none" stroke="${strokeCol}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="0.3"/>`;
         }
-        pts.forEach(p=>{ const [x,y]=MAP.project(p[0],p[1]); s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="${L.color}" opacity="0.75"/>`; });
+        if(opts.showStops) pts.forEach(p=>{ const [x,y]=MAP.project(p[0],p[1]); s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="${dotCol}" opacity="0.75"/>`; });
       });
     });
     s += `</g>`;
@@ -1995,18 +2001,28 @@ function renderCarte(panel, note){
       ${answered
         ? ``
         : `<button class="btn btn-secondary" style="padding-left:14px" onclick="carteReveal()">Je ne sais pas</button>
-           <span style="margin-left:auto;font-size:12px;color:var(--muted);cursor:pointer;user-select:none" onclick="toggleTrace()">
-             <span style="display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #b9b3a2;background:${state.mapTrace?'#6b6b63':'transparent'};vertical-align:-2px;margin-right:5px"></span>Afficher toutes les lignes</span>`}
+           <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+             <span style="font-size:12px;color:var(--muted);cursor:pointer;user-select:none;border:1px solid #b9b3a2;border-radius:5px;padding:3px 8px" onclick="cycleLineStyle()">Lignes : ${MAP_LINE_STYLE_LABELS[state.mapLineStyle]}</span>
+             <span style="font-size:12px;color:var(--muted);cursor:pointer;user-select:none" onclick="toggleShowStops()">
+               <span style="display:inline-block;width:12px;height:12px;border-radius:3px;border:1px solid #b9b3a2;background:${state.mapShowStops?'#6b6b63':'transparent'};vertical-align:-2px;margin-right:5px"></span>Stations</span>
+           </div>`}
     </div>
     <div style="position:relative">
-      ${buildMapSvg({clickable:!answered, answer, trace: state.mapTrace})}
+      ${buildMapSvg({clickable:!answered, answer, lineStyle: state.mapLineStyle, showStops: state.mapShowStops})}
       ${popup}
     </div>
   `;
   note.textContent = answered ? "" : "Clique sur la carte à l'emplacement de la station. Repères : Seine (bleu), arrondissements, gares (carrés), monuments, parcs (vert).";
 }
 
-function toggleTrace(){ state.mapTrace = !state.mapTrace; render(); }
+const MAP_LINE_STYLE_LABELS = {none:"aucune", gray:"sans couleur", color:"avec couleur"};
+const MAP_LINE_STYLE_CYCLE = ["none","gray","color"];
+function cycleLineStyle(){
+  const i = MAP_LINE_STYLE_CYCLE.indexOf(state.mapLineStyle);
+  state.mapLineStyle = MAP_LINE_STYLE_CYCLE[(i+1) % MAP_LINE_STYLE_CYCLE.length];
+  render();
+}
+function toggleShowStops(){ state.mapShowStops = !state.mapShowStops; render(); }
 
 function onMapClick(ev){
   const m = state.map;
