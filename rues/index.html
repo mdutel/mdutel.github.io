@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan Vierge</title>
+<style>
+  :root{
+    --paper:#E6E8E5; --ink:#36424A; --ink-soft:#9AA4A2; --grid:#D3D7D2;
+    --poi:#5E7D78; --accent:#DD8A2E; --ok:#4F8A6B; --err:#B85A4E;
+    --outside:#D6D9D3; --seine:#A9C4D0; --contourln:#AEB6AC;
+    --panel:#283037; --panel-2:#313b43; --panel-text:#E9EBE7; --panel-dim:#8A969C; --line:#3c4750;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+    background:var(--panel); color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  .stage{display:grid;grid-template-columns:1fr 340px;height:100vh}
+  .map-wrap{background:var(--outside);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  .map-wrap::after{content:attr(data-arr);position:absolute;right:18px;bottom:10px;font:600 13px ui-monospace,Menlo,monospace;color:var(--ink-soft);letter-spacing:.08em}
+  svg#map{width:100%;height:100%;display:block}
+  .contour-fill{fill:var(--paper);stroke:none}
+  .seine{fill:var(--seine);stroke:none;opacity:.92}
+  .contour-line{fill:none;stroke:var(--contourln);stroke-width:1.4}
+
+  /* États carto */
+  .axe{stroke:var(--ink);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;transition:stroke .12s,stroke-width .12s}
+  .axe.b{stroke:var(--ink-soft);stroke-width:1.1}
+  .poi-contour{fill:rgba(94,125,120,.10);stroke:var(--poi);stroke-width:1;transition:fill .12s,stroke .12s}
+  .poi-circle{fill:rgba(94,125,120,.07);stroke:var(--poi);stroke-width:1;stroke-dasharray:3 3}
+  .hi{stroke:var(--accent)!important;stroke-width:3.6!important}
+  polygon.hi,circle.hi{fill:rgba(221,138,46,.24)!important}
+  .ok{stroke:var(--ok)!important;stroke-width:3.6!important}
+  polygon.ok,circle.ok{fill:rgba(79,138,107,.30)!important}
+  .err{stroke:var(--err)!important;stroke-width:3.6!important}
+  polygon.err,circle.err{fill:rgba(184,90,78,.26)!important}
+  .reveal{stroke:var(--accent)!important;stroke-width:4.5!important;animation:pulse .6s ease-in-out 3}
+  polygon.reveal,circle.reveal{fill:rgba(221,138,46,.40)!important}
+  .mastered{stroke:var(--ok)!important;stroke-width:2!important}
+  polygon.mastered,circle.mastered{fill:rgba(79,138,107,.15)!important;stroke:var(--ok)!important}
+  @keyframes pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.25}}
+
+  /* Panneau */
+  .panel{background:var(--panel);color:var(--panel-text);display:flex;flex-direction:column;padding:22px 22px 18px;gap:18px;overflow-y:auto}
+  .brand{font:600 13px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--panel-dim)}
+  .brand b{color:var(--accent);font-weight:600}
+  .prompt{border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:18px 0}
+  #prompt-kind{font:600 11px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;text-transform:uppercase;color:var(--panel-dim)}
+  #prompt-name{font-size:25px;font-weight:600;line-height:1.15;margin:9px 0 10px;letter-spacing:-.01em}
+  #prompt-cat{display:inline-block;font:500 12px ui-monospace,Menlo,monospace;color:var(--poi);border:1px solid var(--line);border-radius:999px;padding:3px 11px}
+  #msg{min-height:18px;font-size:13px;font-weight:500;color:var(--panel-dim)}
+  #msg[data-kind="ok"]{color:var(--ok)} #msg[data-kind="err"]{color:var(--err)} #msg[data-kind="reveal"]{color:var(--accent)}
+  .row{display:flex;gap:9px}
+  button{font-family:inherit;font-size:13px;font-weight:500;border:1px solid var(--line);background:var(--panel-2);color:var(--panel-text);border-radius:8px;padding:10px 13px;cursor:pointer;transition:background .12s,border-color .12s}
+  button:hover{background:#3a454e}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .arr-select{width:100%;font-family:inherit;font-size:13px;font-weight:500;border:1px solid var(--line);background:var(--panel-2);color:var(--panel-text);border-radius:8px;padding:9px 11px;cursor:pointer}
+  .arr-select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  #idk{flex:1}
+  #toggle{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center}
+  #toggle::after{content:"changer";font:500 11px ui-monospace,Menlo,monospace;color:var(--panel-dim)}
+  #toggle[data-mode="AB"]{border-color:var(--accent)}
+  .opts{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--panel-dim)}
+  .opts label{display:flex;align-items:center;gap:7px;cursor:pointer}
+  .opts a{color:var(--panel-dim);text-decoration:underline;cursor:pointer;background:none;border:none;font:inherit;padding:0}
+  #counters{display:flex;flex-direction:column;gap:6px;margin-top:2px}
+  .cnt-head{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--panel-dim);margin-top:8px;margin-bottom:2px}
+  .cnt-row{display:grid;grid-template-columns:1fr 56px 34px;align-items:center;gap:9px;font-size:12.5px}
+  .cnt-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cnt-bar{height:4px;background:var(--line);border-radius:2px;overflow:hidden}
+  .cnt-bar i{display:block;height:100%;background:var(--ok);transition:width .35s}
+  .cnt-num{font:500 11px ui-monospace,Menlo,monospace;color:var(--panel-dim);text-align:right}
+  .toosmall{display:none}
+  @media(max-width:820px){
+    .stage{display:none} .toosmall{display:flex;height:100vh;align-items:center;justify-content:center;padding:30px;text-align:center;color:var(--panel-text);font-size:15px;line-height:1.5}
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="map-wrap"><svg id="map" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <aside class="panel">
+      <div class="brand"><b>Plan Vierge</b></div>
+      <select id="arr-select" class="arr-select" aria-label="Arrondissement"></select>
+      <div class="prompt">
+        <div id="prompt-kind">Pointez la voie</div>
+        <div id="prompt-name">—</div>
+        <span id="prompt-cat"></span>
+      </div>
+      <div id="msg" data-kind=""></div>
+      <div class="row">
+        <button id="idk">Je ne sais pas</button>
+        <button id="restart">Nouveau tour</button>
+      </div>
+      <button id="toggle" data-mode="A">Palier A</button>
+      <div class="opts">
+        <label><input type="checkbox" id="hide"> Cacher les trouvées</label>
+        <button class="resetlink" id="reset">réinitialiser</button>
+      </div>
+      <div id="counters"></div>
+    </aside>
+  </div>
+  <div class="toosmall">Cet outil est conçu pour un écran d’ordinateur (le survol à la souris est central). Ouvrez-le sur un laptop.</div>
+
+<script>
+/* Plan Vierge — mémorisation des rues de Paris. Logique d'orientation, multi-arrondissement. */
+(function () {
+  "use strict";
+
+  // ---------- Arrondissements disponibles ----------
+  const ARRONDISSEMENTS = [
+    { insee: "75113", label: "13e" }
+  ];
+  let DATA = null;
+  let currentInsee = null;
+
+  // ---------- Storage (dégrade sans crash si localStorage bloqué) ----------
+  const Store = (function () {
+    const mem = {};
+    let ok = true;
+    try { localStorage.setItem("__t", "1"); localStorage.removeItem("__t"); }
+    catch (e) { ok = false; }
+    return {
+      get(k) { try { return ok ? localStorage.getItem(k) : mem[k]; } catch (e) { return mem[k]; } },
+      set(k, v) { try { ok ? localStorage.setItem(k, v) : (mem[k] = v); } catch (e) { mem[k] = v; } }
+    };
+  })();
+  // Entrées scopées par arrondissement : "{insee}:{name}"
+  const MASTERED_KEY = "rues_mastered_v1";
+  function loadMastered() {
+    try { return new Set(JSON.parse(Store.get(MASTERED_KEY) || "[]")); }
+    catch (e) { return new Set(); }
+  }
+  function saveMastered(set) { Store.set(MASTERED_KEY, JSON.stringify([...set])); }
+  function masteredKey(name) { return currentInsee + ":" + name; }
+
+  // ---------- Chargement des modules de données ----------
+  function loadArrondissement(insee, cb) {
+    if (window.RUES_DATA && window.RUES_DATA[insee]) { cb(window.RUES_DATA[insee]); return; }
+    const s = document.createElement("script");
+    s.src = "data/" + insee + ".js";
+    s.onload = function () {
+      if (!window.RUES_DATA || !window.RUES_DATA[insee]) { console.error("Module de données introuvable pour", insee); return; }
+      cb(window.RUES_DATA[insee]);
+    };
+    s.onerror = function () { console.error("Échec de chargement du module de données pour", insee); };
+    document.head.appendChild(s);
+  }
+
+  // ---------- Projection ----------
+  const PAD = 16, DW = 1040;
+  let bounds, midLat, scale, DH, pxPerMeter;
+
+  function polyRings(geom) {
+    if (!geom) return [];
+    if (geom.type === "Polygon") return geom.coordinates;
+    if (geom.type === "MultiPolygon") return geom.coordinates.reduce((a, p) => a.concat(p), []);
+    return [];
+  }
+  function forEachCoord(cb) {
+    DATA.axes.forEach(a => a.geometry.coordinates.forEach(ls => ls.forEach(cb)));
+    DATA.pois.forEach(p => {
+      if (p.geometry) polyRings(p.geometry).forEach(r => r.forEach(cb));
+      else cb(p.center);
+    });
+  }
+  function frameCoords(cb) {
+    if (DATA.contour) polyRings(DATA.contour).forEach(r => r.forEach(cb));
+    else forEachCoord(cb);
+  }
+  function setupProjection() {
+    let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+    frameCoords(c => {
+      if (c[0] < minLon) minLon = c[0]; if (c[0] > maxLon) maxLon = c[0];
+      if (c[1] < minLat) minLat = c[1]; if (c[1] > maxLat) maxLat = c[1];
+    });
+    bounds = { minLon, maxLon, minLat, maxLat };
+    midLat = (minLat + maxLat) / 2;
+    const spanX = (maxLon - minLon) * Math.cos(midLat * Math.PI / 180);
+    const spanY = (maxLat - minLat);
+    scale = (DW - 2 * PAD) / spanX;
+    DH = spanY * scale + 2 * PAD;
+    pxPerMeter = scale / 111320;
+  }
+  function project(c) {
+    const x = PAD + (c[0] - bounds.minLon) * Math.cos(midLat * Math.PI / 180) * scale;
+    const y = PAD + (bounds.maxLat - c[1]) * scale;
+    return [x, y];
+  }
+  function ringPath(ring) {
+    return ring.map((c, i) => { const p = project(c); return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join(" ") + " Z";
+  }
+  function polyPath(geom) {
+    const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates.reduce((a, p) => a.concat(p), []);
+    return rings.map(ringPath).join(" ");
+  }
+
+  // ---------- Géométrie de hit-test ----------
+  function distPointSeg(px, py, ax, ay, bx, by) {
+    const dx = bx - ax, dy = by - ay;
+    const l2 = dx * dx + dy * dy;
+    let t = l2 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+    t = Math.max(0, Math.min(1, t));
+    const cx = ax + t * dx, cy = ay + t * dy;
+    return Math.hypot(px - cx, py - cy);
+  }
+  function pointInRing(px, py, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1], xj = ring[j][0], yj = ring[j][1];
+      const hit = ((yi > py) !== (yj > py)) &&
+        (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+      if (hit) inside = !inside;
+    }
+    return inside;
+  }
+  function distToRing(px, py, ring) {
+    let d = Infinity;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      d = Math.min(d, distPointSeg(px, py, ring[j][0], ring[j][1], ring[i][0], ring[i][1]));
+    }
+    return d;
+  }
+
+  // ---------- Construction des cibles ----------
+  const NS = "http://www.w3.org/2000/svg";
+  const targets = [];
+
+  function buildTargets() {
+    targets.length = 0;
+    // Axes
+    DATA.axes.forEach(a => {
+      const segs = [];      // segments projetés [x1,y1,x2,y2]
+      const polylines = []; // pour le rendu
+      a.geometry.coordinates.forEach(ls => {
+        const pts = ls.map(project);
+        polylines.push(pts);
+        for (let i = 1; i < pts.length; i++)
+          segs.push([pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]]);
+      });
+      targets.push({
+        kind: "axe", name: a.name, category: a.category, tier: a.tier,
+        polylines, segs, els: [],
+        dist(px, py) {
+          let d = Infinity;
+          for (const s of this.segs) d = Math.min(d, distPointSeg(px, py, s[0], s[1], s[2], s[3]));
+          return d;
+        }
+      });
+    });
+    // POIs
+    DATA.pois.forEach(p => {
+      const c = project(p.center);
+      if (p.shape === "contour" && p.geometry) {
+        const rings = polyRings(p.geometry).map(r => r.map(project));
+        targets.push({
+          kind: "poi", name: p.name, category: p.category, tier: "A",
+          rings, center: c, els: [],
+          dist(px, py) {
+            for (const r of this.rings) if (pointInRing(px, py, r)) return 0;
+            let d = Infinity;
+            for (const r of this.rings) d = Math.min(d, distToRing(px, py, r));
+            return d;
+          }
+        });
+      } else {
+        const r = Math.max(7, p.radius_m * pxPerMeter);
+        targets.push({
+          kind: "poi", name: p.name, category: p.category, tier: "A",
+          circle: { x: c[0], y: c[1], r }, center: c, els: [],
+          dist(px, py) { return Math.max(0, Math.hypot(px - this.circle.x, py - this.circle.y) - this.circle.r); }
+        });
+      }
+    });
+  }
+
+  // ---------- Rendu SVG ----------
+  let svg;
+  function el(tag, attrs) {
+    const e = document.createElementNS(NS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  function renderSVG() {
+    svg = document.getElementById("map");
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    svg.setAttribute("viewBox", `0 0 ${DW} ${DH}`);
+    const gFrame = el("g", {});
+    if (DATA.contour) gFrame.appendChild(el("path", { d: polyPath(DATA.contour), class: "contour-fill" }));
+    if (DATA.seine) gFrame.appendChild(el("path", { d: polyPath(DATA.seine), class: "seine", "fill-rule": "evenodd" }));
+    if (DATA.contour) gFrame.appendChild(el("path", { d: polyPath(DATA.contour), class: "contour-line", "fill-rule": "evenodd" }));
+    svg.appendChild(gFrame);
+    const gAxesB = el("g", {}), gAxesA = el("g", {}), gPoi = el("g", {}), gCircle = el("g", {});
+    targets.forEach(t => {
+      if (t.kind === "axe") {
+        const g = t.tier === "A" ? gAxesA : gAxesB;
+        t.polylines.forEach(pts => {
+          const pl = el("polyline", {
+            points: pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" "),
+            class: "axe" + (t.tier === "B" ? " b" : ""), fill: "none"
+          });
+          g.appendChild(pl); t.els.push(pl);
+        });
+      } else if (t.rings) {
+        t.rings.forEach(r => {
+          const pg = el("polygon", {
+            points: r.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" "),
+            class: "poi-contour"
+          });
+          gPoi.appendChild(pg); t.els.push(pg);
+        });
+      } else {
+        const ci = el("circle", { cx: t.circle.x.toFixed(1), cy: t.circle.y.toFixed(1), r: t.circle.r.toFixed(1), class: "poi-circle" });
+        gCircle.appendChild(ci); t.els.push(ci);
+      }
+    });
+    svg.appendChild(gAxesB); svg.appendChild(gAxesA); svg.appendChild(gPoi); svg.appendChild(gCircle);
+  }
+
+  function setClass(t, cls) { t.els.forEach(e => { e.setAttribute("class", e.getAttribute("class").replace(/ (hi|ok|err|reveal|mastered)/g, "") + (cls ? " " + cls : "")); }); }
+
+  // ---------- État de jeu ----------
+  let mode = "A";            // "A" ou "AB"
+  let hideMastered = false;
+  let mastered = loadMastered();
+  let queue = [], qi = 0, current = null, found = 0, totalRound = 0;
+  let hi = [], busy = false;
+
+  function activePool() {
+    return targets.filter(t => (t.kind === "poi" || t.tier === "A" || mode === "AB"));
+  }
+  function refreshBase() {
+    // remet tout à l'état de base, marque les maîtrisées en vert
+    targets.forEach(t => {
+      const visible = (t.kind === "poi" || t.tier === "A" || mode === "AB");
+      t.els.forEach(e => e.style.display = visible ? "" : "none");
+      setClass(t, mastered.has(masteredKey(t.name)) ? "mastered" : "");
+    });
+  }
+  function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+  function startRound() {
+    refreshBase();
+    let pool = activePool();
+    if (hideMastered) pool = pool.filter(t => !mastered.has(masteredKey(t.name)));
+    queue = shuffle(pool.slice()); qi = 0; found = 0; totalRound = queue.length;
+    updateCounters();
+    if (!queue.length) { showPrompt(null); return; }
+    next();
+  }
+  function next() {
+    clearHi();
+    if (qi >= queue.length) { current = null; showPrompt("done"); return; }
+    current = queue[qi];
+    showPrompt(current);
+    setMsg("");
+  }
+  function showPrompt(t) {
+    const pk = document.getElementById("prompt-kind");
+    const pn = document.getElementById("prompt-name");
+    const pc = document.getElementById("prompt-cat");
+    if (t === "done") { pk.textContent = "Tour terminé"; pn.textContent = `${found} / ${totalRound} trouvés`; pc.textContent = ""; return; }
+    if (!t) { pk.textContent = "Rien à réviser"; pn.textContent = "Tout est masqué ou vide"; pc.textContent = ""; return; }
+    pk.textContent = t.kind === "axe" ? "Pointez la voie" : "Pointez le lieu";
+    pn.textContent = t.name;
+    pc.textContent = t.category;
+  }
+  function setMsg(m, kind) {
+    const e = document.getElementById("msg");
+    e.textContent = m; e.setAttribute("data-kind", kind || "");
+  }
+
+  // ---------- Interactions ----------
+  function svgPoint(evt) {
+    const ctm = svg.getScreenCTM();
+    if (!ctm) { const r = svg.getBoundingClientRect(); return [(evt.clientX - r.left) / r.width * DW, (evt.clientY - r.top) / r.height * DH]; }
+    const pt = svg.createSVGPoint(); pt.x = evt.clientX; pt.y = evt.clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    return [p.x, p.y];
+  }
+  const HIT = 16;
+  function baseClassOf(t) { return mastered.has(masteredKey(t.name)) ? "mastered" : ""; }
+  function clearHi() { hi.forEach(t => setClass(t, baseClassOf(t))); hi = []; }
+  function sameSet(a, b) { if (a.length !== b.length) return false; for (const t of a) if (b.indexOf(t) < 0) return false; return true; }
+  function candidates(mx, my) {
+    const pool = activePool().filter(t => t.kind === current.kind);
+    if (current.kind === "poi") {
+      const inside = pool.filter(t => t.dist(mx, my) === 0);
+      if (inside.length) return inside;            // lieux superposés : on les prend tous
+    }
+    let best = null, bd = Infinity;
+    for (const t of pool) { const d = t.dist(mx, my); if (d < bd) { bd = d; best = t; } }
+    return (best && bd <= HIT) ? [best] : [];
+  }
+  function onMove(evt) {
+    if (busy || !current) return;
+    const [mx, my] = svgPoint(evt);
+    const cand = candidates(mx, my);
+    if (sameSet(cand, hi)) return;
+    clearHi();
+    cand.forEach(t => setClass(t, "hi"));
+    hi = cand;
+    svg.style.cursor = cand.length ? "pointer" : "default";
+  }
+  function onClick() {
+    if (busy || !current || !hi.length) return;
+    if (hi.indexOf(current) >= 0) {
+      busy = true;
+      found++; mastered.add(masteredKey(current.name)); saveMastered(mastered);
+      hi.forEach(t => { if (t !== current) setClass(t, baseClassOf(t)); });
+      setClass(current, "ok"); setMsg("Trouvé.", "ok"); updateCounters();
+      const cur = current;
+      setTimeout(() => { setClass(cur, "mastered"); qi++; busy = false; hi = []; next(); }, 480);
+    } else {
+      const wrongs = hi.slice();
+      wrongs.forEach(t => setClass(t, "err")); setMsg("Pas celle-ci. Réessayez.", "err");
+      setTimeout(() => { wrongs.forEach(t => setClass(t, hi.indexOf(t) >= 0 ? "hi" : baseClassOf(t))); }, 420);
+    }
+  }
+  function onIDK() {
+    if (busy || !current) return;
+    busy = true; clearHi();
+    setClass(current, "reveal"); setMsg("C’était : " + current.name, "reveal");
+    const cur = current;
+    setTimeout(() => { setClass(cur, baseClassOf(cur)); qi++; busy = false; next(); }, 2200);
+  }
+
+  // ---------- Compteurs ----------
+  const AXE_CATS = ["Boulevard", "Avenue", "Rue", "Place", "Pont"];
+  const POI_CATS = ["Quartiers", "Parcs", "Piscines", "Sport", "Cinémas", "Culture & institutions", "Commerces", "Transport", "Santé"];
+  function updateCounters() {
+    const pool = activePool();
+    const box = document.getElementById("counters");
+    box.innerHTML = "";
+    const groups = [["Voies", AXE_CATS, "axe"], ["Lieux", POI_CATS, "poi"]];
+    groups.forEach(([label, cats, kind]) => {
+      const head = document.createElement("div"); head.className = "cnt-head"; head.textContent = label; box.appendChild(head);
+      cats.forEach(cat => {
+        const items = pool.filter(t => t.kind === kind && t.category === cat);
+        if (!items.length) return;
+        const done = items.filter(t => mastered.has(masteredKey(t.name))).length;
+        const row = document.createElement("div"); row.className = "cnt-row";
+        const pct = Math.round(done / items.length * 100);
+        row.innerHTML = `<span class="cnt-label">${cat}</span>`
+          + `<span class="cnt-bar"><i style="width:${pct}%"></i></span>`
+          + `<span class="cnt-num">${done}/${items.length}</span>`;
+        box.appendChild(row);
+      });
+    });
+  }
+
+  // ---------- Sélection d'arrondissement ----------
+  function populateSelector() {
+    const sel = document.getElementById("arr-select");
+    ARRONDISSEMENTS.forEach(a => {
+      const opt = document.createElement("option");
+      opt.value = a.insee; opt.textContent = a.label;
+      sel.appendChild(opt);
+    });
+    sel.addEventListener("change", function () { selectArrondissement(this.value); });
+  }
+  function selectArrondissement(insee) {
+    const meta = ARRONDISSEMENTS.find(a => a.insee === insee);
+    document.getElementById("arr-select").value = insee;
+    loadArrondissement(insee, function (data) {
+      currentInsee = insee;
+      DATA = data;
+      document.title = "Plan Vierge — " + meta.label + " arrondissement";
+      document.querySelector(".map-wrap").dataset.arr = meta.label;
+      setupProjection(); buildTargets(); renderSVG();
+      startRound();
+    });
+  }
+
+  // ---------- Init ----------
+  function init() {
+    svg = document.getElementById("map");
+    svg.addEventListener("mousemove", onMove);
+    svg.addEventListener("click", onClick);
+    document.getElementById("idk").addEventListener("click", onIDK);
+    document.getElementById("restart").addEventListener("click", startRound);
+    document.getElementById("toggle").addEventListener("click", function () {
+      mode = mode === "A" ? "AB" : "A";
+      this.textContent = mode === "A" ? "Palier A" : "Palier A + B";
+      this.setAttribute("data-mode", mode);
+      startRound();
+    });
+    document.getElementById("hide").addEventListener("change", function () { hideMastered = this.checked; startRound(); });
+    document.getElementById("reset").addEventListener("click", function () {
+      if (!confirm("Effacer la progression mémorisée pour cet arrondissement ?")) return;
+      const prefix = currentInsee + ":";
+      mastered = new Set([...mastered].filter(k => !k.startsWith(prefix)));
+      saveMastered(mastered); startRound();
+    });
+    populateSelector();
+    selectArrondissement(ARRONDISSEMENTS[0].insee);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
+})();
+
+</script>
+</body>
+</html>
