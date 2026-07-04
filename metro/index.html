@@ -1842,6 +1842,17 @@ function renderLineStrip(slotMode){
   return L.branches ? renderForkStrip(slotMode) : renderStrip(slotMode);
 }
 
+// Interactive (training) views render the strip full-size and, by default, let a
+// wide fork/loop line scroll horizontally. Wrapping it in .fit-strip and calling
+// fitFinishedStrip() (as the finished/solutions screens already do) scales it to
+// the panel width instead, so line 7 — and any other wide fork/loop line — never
+// needs lateral scrolling. Simple lines already stretch via flexbox, so they're
+// returned unwrapped and fitFinishedStrip() no-ops on them.
+function fitWrap(stripHtml){
+  const L = LINES[state.lineKey];
+  return (L.branches || L.loop) ? `<div class="fit-strip">${stripHtml}</div>` : stripHtml;
+}
+
 // read-only answer key: every station name & correspondence always shown,
 // nothing clickable. Reuses the same strip renderers (they check
 // state.view==="solutions" to force every stop "known") and the finished-
@@ -1914,7 +1925,35 @@ function renderStrip(slotMode){
       </div>`;
   });
   html += `</div></div>`;
+  scheduleSimpleLayout();
   return html;
+}
+
+// Simple lines lay out stations with equal-width flex cells (so the strip can
+// stretch to fill the panel), but a dot is centered *within* its cell — the
+// last cell's right edge (not its dot) sits at the strip's right edge. The
+// .spine's CSS defaults (left:34px/right:60px) were a rough guess tuned for a
+// mid-size station count, so it overshoots past the terminus dot on lines
+// with fewer/wider cells. Measure the real first/last dot positions instead
+// (same approach as scheduleForkLayout/scheduleLoopLayout) so the spine always
+// ends exactly at the terminus, regardless of station count.
+function scheduleSimpleLayout(){
+  requestAnimationFrame(()=>{
+    const strip = document.querySelector('.strip');
+    if(!strip) return;
+    const spine = strip.querySelector(':scope > .spine');
+    if(!spine) return;
+    // clear any finished-screen scale before measuring, like scheduleForkLayout does
+    const hadTransform = strip.style.transform;
+    if(hadTransform) strip.style.transform = '';
+    const srect = strip.getBoundingClientRect();
+    const dots = [...strip.querySelectorAll(':scope > .stop .dot')];
+    if(dots.length < 2) return;
+    const xs = dots.map(d => { const r = d.getBoundingClientRect(); return r.x + r.width/2 - srect.x; });
+    spine.style.left = Math.min(...xs) + 'px';
+    spine.style.right = (srect.width - Math.max(...xs)) + 'px';
+    if(hadTransform) fitFinishedStrip();
+  });
 }
 
 function render(){
@@ -2510,9 +2549,10 @@ function renderOrdre(panel, note){
 
   panel.innerHTML = `
     ${panelHeadHtml(state.lineKey)}
-    ${stripHtml}
+    ${fitWrap(stripHtml)}
     ${qcard}
   `;
+  fitFinishedStrip();
   note.textContent = active === null ? "" : "Astuce : la validation est automatique dès que c'est bon ; les fautes de frappe et accents sont tolérés.";
   if(active !== null){
     const inp = document.getElementById("answerInput");
@@ -2611,7 +2651,7 @@ function renderCorrQuestion(panel, note, idx, onContinue){
       <div class="arrow">correspondance(s) ?</div>
       <div></div>
     </div>
-    ${stripHtml}
+    ${fitWrap(stripHtml)}
     <div class="qcard">
       <div class="qlabel">Quelles lignes / RER / tram sont en correspondance ici ? (plusieurs choix possibles)</div>
       <div class="corr-options" id="corrOptions"></div>
@@ -2622,6 +2662,7 @@ function renderCorrQuestion(panel, note, idx, onContinue){
       <div id="fbCorr" class="feedback"></div>
     </div>
   `;
+  fitFinishedStrip();
   window.__corrContinue = onContinue;
   note.textContent = "";
 
@@ -2699,7 +2740,7 @@ function renderMelange(panel, note){
   const stripHtml = renderLineStrip(true);
   panel.innerHTML = `
     ${panelHeadHtml(state.lineKey)}
-    ${stripHtml}
+    ${fitWrap(stripHtml)}
     <div class="qcard">
       <div class="qlabel">${state.selectedChip ? "Clique sur le bon emplacement sur la ligne ci-dessus." : "Clique d'abord une station ci-dessous, puis son emplacement sur la ligne."}</div>
       <input type="text" id="bankFilter" class="bank-filter" placeholder="Filtrer les stations…" autocomplete="off" autocapitalize="off" value="${(state.bankFilter||'').replace(/"/g,'&quot;')}">
@@ -2707,6 +2748,7 @@ function renderMelange(panel, note){
       <div id="fb" class="feedback"></div>
     </div>
   `;
+  fitFinishedStrip();
   note.textContent = "";
 
   renderBankList();
@@ -2776,20 +2818,23 @@ loadStore();
 resetLine();
 render();
 
-// The forked-line strip positions its spines and diagonal in absolute pixels
-// based on measured dot coordinates, so it must be recomputed when the viewport
-// changes. Only forked lines need this; other views are pure CSS flow.
+// Every line strip (simple, forked, loop) positions its spine/diagonals in
+// absolute pixels based on measured dot coordinates, so it must be recomputed
+// when the viewport changes.
 let _resizeRaf = null;
 window.addEventListener("resize", ()=>{
-  if(!LINES[state.lineKey] || (!LINES[state.lineKey].branches && !LINES[state.lineKey].loop)) return;
+  if(!LINES[state.lineKey]) return;
   if(state.view === "train" && state.mode === "carte") return;
   if(state.view !== "train" && state.view !== "solutions") return;
   if(_resizeRaf) cancelAnimationFrame(_resizeRaf);
   _resizeRaf = requestAnimationFrame(()=>{
     const _L=LINES[state.lineKey];
-    (_L.loop ? scheduleLoopLayout : scheduleForkLayout)(_L.color);
-    // on the finished screen and the solutions view the strip is scaled to fit; recompute that
-    if(state.view === "solutions" || state.phase === "finished") fitFinishedStrip();
+    if(_L.loop) scheduleLoopLayout(_L.color);
+    else if(_L.branches) scheduleForkLayout(_L.color);
+    else scheduleSimpleLayout();
+    // whenever a strip is wrapped for scale-to-fit (finished screen, solutions,
+    // or a fork/loop line in training), recompute that fit for the new width
+    if(document.querySelector('.fit-strip')) fitFinishedStrip();
   });
 });
 </script>
