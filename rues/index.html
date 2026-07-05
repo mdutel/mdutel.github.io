@@ -42,12 +42,8 @@
   polygon.ok,circle.ok{fill:rgba(79,138,107,.30)!important}
   .err{stroke:var(--err)!important;stroke-width:3.6!important}
   polygon.err,circle.err{fill:rgba(184,90,78,.26)!important}
-  .reveal{stroke:var(--accent)!important;stroke-width:4.5!important;animation:pulse .6s ease-in-out 3}
-  polygon.reveal,circle.reveal{fill:rgba(221,138,46,.40)!important}
-  .mastered{stroke:var(--ok)!important;stroke-width:2!important}
-  polygon.mastered,circle.mastered{fill:rgba(79,138,107,.15)!important;stroke:var(--ok)!important}
-  .scheduled{stroke:var(--accent)!important;stroke-width:2!important}
-  polygon.scheduled,circle.scheduled{fill:rgba(221,138,46,.12)!important;stroke:var(--accent)!important}
+  .reveal{stroke:var(--err)!important;stroke-width:4.5!important;animation:pulse .6s ease-in-out 3}
+  polygon.reveal,circle.reveal{fill:rgba(184,90,78,.40)!important}
   @keyframes pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.25}}
 
   /* Panneau */
@@ -75,9 +71,6 @@
   #solution-toggle::after{content:"activer";font:500 11px ui-monospace,Menlo,monospace;color:var(--panel-dim)}
   #solution-toggle[data-on="1"]{border-color:var(--accent)}
   #solution-toggle[data-on="1"]::after{content:"désactiver";color:var(--accent)}
-  .opts{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--panel-dim)}
-  .opts label{display:flex;align-items:center;gap:7px;cursor:pointer}
-  .opts a{color:var(--panel-dim);text-decoration:underline;cursor:pointer;background:none;border:none;font:inherit;padding:0}
   #counters{display:flex;flex-direction:column;gap:6px;margin-top:2px}
   .cnt-head{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--panel-dim);margin-top:8px;margin-bottom:2px}
   .cnt-row{display:grid;grid-template-columns:1fr 56px 34px;align-items:center;gap:9px;font-size:12.5px}
@@ -154,10 +147,6 @@
         <button id="restart">Nouveau tour</button>
       </div>
       <button id="solution-toggle" data-on="0">Mode solution</button>
-      <div class="opts">
-        <label><input type="checkbox" id="hide"> Cacher les trouvées</label>
-        <button class="resetlink" id="reset">réinitialiser</button>
-      </div>
       <div class="row nav-row">
         <button id="review-btn" class="nav-btn" disabled><span>À réviser</span><span class="badge-count">0</span></button>
         <button id="stats-btn" class="nav-btn"><span>Stats</span></button>
@@ -495,11 +484,10 @@
     svg.appendChild(gAxesB); svg.appendChild(gAxesA); svg.appendChild(gPoi); svg.appendChild(gCircle);
   }
 
-  function setClass(t, cls) { t.els.forEach(e => { e.setAttribute("class", e.getAttribute("class").replace(/ (hi|ok|err|reveal|mastered|scheduled)/g, "") + (cls ? " " + cls : "")); }); }
+  function setClass(t, cls) { t.els.forEach(e => { e.setAttribute("class", e.getAttribute("class").replace(/ (hi|ok|err|reveal)/g, "") + (cls ? " " + cls : "")); }); }
 
   // ---------- État de jeu ----------
   let solutionMode = false;
-  let hideMastered = false;
   let PROGRESS = loadProgress();
   let queue = [], qi = 0, current = null, found = 0, totalRound = 0;
   let hi = [], busy = false;
@@ -510,19 +498,22 @@
   function activePool() {
     return targets;
   }
+  function resetSession() {
+    // efface l'état du tour (vert trouvé / rouge raté) — appelé au début de chaque tour
+    targets.forEach(t => { t._sess = null; });
+    refreshBase();
+  }
   function refreshBase() {
-    // remet tout à l'état de base (maîtrisées en vert, en cours en orange)
-    targets.forEach(t => { setClass(t, baseClassOf(t)); });
+    // repeint la carte selon l'état du tour en cours (neutre / vert trouvé / rouge raté)
+    targets.forEach(t => { setClass(t, sessionClassOf(t)); });
   }
   function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; } return a; }
 
   function startRound(mode) {
     roundMode = mode || "training";
     roundMistakes = [];
-    refreshBase();
-    let pool = activePool();
-    if (hideMastered) pool = pool.filter(t => !isGraduated(itemRecord(currentInsee, t.name)));
-    queue = shuffle(pool.slice()); qi = 0; found = 0; totalRound = queue.length;
+    resetSession();
+    queue = shuffle(activePool().slice()); qi = 0; found = 0; totalRound = queue.length;
     updateCounters();
     if (!queue.length) { if (!solutionMode) showPrompt(null); return; }
     next();
@@ -580,7 +571,7 @@
     const due = dueItems(currentInsee);
     if (!due.length) return;
     roundMode = "review"; roundMistakes = [];
-    refreshBase(); queue = shuffle(due.slice()); qi = 0; found = 0; totalRound = queue.length;
+    resetSession(); queue = shuffle(due.slice()); qi = 0; found = 0; totalRound = queue.length;
     updateCounters(); next();
   }
   function startMistakesReview() {
@@ -588,7 +579,7 @@
     const missed = roundMistakes.slice();
     closeModal();
     roundMode = "mistakes"; roundMistakes = [];
-    refreshBase(); queue = shuffle(missed); qi = 0; found = 0; totalRound = queue.length;
+    resetSession(); queue = shuffle(missed); qi = 0; found = 0; totalRound = queue.length;
     updateCounters(); next();
   }
   function updateDueBadge() {
@@ -678,11 +669,15 @@
       </tr>`;
     }).join("") : `<tr><td colspan="3" class="hist-empty">Aucun raté pour l'instant.</td></tr>`;
 
+    const meta = ARRONDISSEMENTS.find(a => a.insee === currentInsee);
     return `
       <div class="modal-h">Stats</div>
       ${blocks}
       <div class="modal-section modal-h">Cibles les plus difficiles</div>
-      <table class="hardest-table"><tbody>${hardRows}</tbody></table>`;
+      <table class="hardest-table"><tbody>${hardRows}</tbody></table>
+      <div class="hist-footer">
+        <button onclick="RUES.resetArr()">Réinitialiser la mémorisation${meta ? " — " + escapeHtml(meta.label) : ""}</button>
+      </div>`;
   }
   function fmtDate(ts) {
     const d = new Date(ts);
@@ -723,13 +718,13 @@
     return [p.x, p.y];
   }
   const HIT = 16;
-  function baseClassOf(t) {
-    const rec = itemRecord(currentInsee, t.name);
-    if (isGraduated(rec)) return "mastered";
-    if (rec && rec.attempts > 0) return "scheduled";
+  function sessionClassOf(t) {
+    // couleur persistante du tour en cours : vert trouvé, rouge raté, sinon neutre
+    if (t._sess === "ok") return "ok";
+    if (t._sess === "err") return "err";
     return "";
   }
-  function clearHi() { hi.forEach(t => setClass(t, baseClassOf(t))); hi = []; }
+  function clearHi() { hi.forEach(t => setClass(t, sessionClassOf(t))); hi = []; }
   function sameSet(a, b) { if (a.length !== b.length) return false; for (const t of a) if (b.indexOf(t) < 0) return false; return true; }
   function candidates(mx, my) {
     const pool = activePool().filter(t => t.kind === current.kind);
@@ -771,11 +766,12 @@
     busy = true; clearHi();
     applyGrade(currentInsee, target.name, "miss");
     roundMistakes.push(target);
-    setClass(target, "reveal");
-    setMsg(reason === "idk" ? "C’était : " + target.name : "Raté. C’était : " + target.name, "reveal");
+    target._sess = "err";
+    setClass(target, "reveal");   // pulse rouge pour révéler l'emplacement, puis rouge fixe
+    setMsg(reason === "idk" ? "C’était : " + target.name : "Raté. C’était : " + target.name, "err");
     updateCounters();
     const t = target;
-    setTimeout(() => { setClass(t, baseClassOf(t)); qi++; busy = false; hi = []; next(); }, 2200);
+    setTimeout(() => { setClass(t, sessionClassOf(t)); qi++; busy = false; hi = []; next(); }, 2200);
   }
   function onClick() {
     if (solutionMode) return;
@@ -783,10 +779,11 @@
     if (hi.indexOf(current) >= 0) {
       busy = true;
       found++; applyGrade(currentInsee, current.name, "clean");
-      hi.forEach(t => { if (t !== current) setClass(t, baseClassOf(t)); });
+      current._sess = "ok";
+      hi.forEach(t => { if (t !== current) setClass(t, sessionClassOf(t)); });
       setClass(current, "ok"); setMsg("Trouvé.", "ok"); updateCounters();
       const cur = current;
-      setTimeout(() => { setClass(cur, baseClassOf(cur)); qi++; busy = false; hi = []; next(); }, 480);
+      setTimeout(() => { setClass(cur, sessionClassOf(cur)); qi++; busy = false; hi = []; next(); }, 480);
     } else {
       terminalMiss(current, "wrong");
     }
@@ -826,17 +823,12 @@
       cats.forEach(cat => {
         const items = pool.filter(t => t.kind === kind && t.category === cat);
         if (!items.length) return;
-        const graduated = items.filter(t => isGraduated(itemRecord(currentInsee, t.name))).length;
-        const scheduled = items.filter(t => {
-          const rec = itemRecord(currentInsee, t.name);
-          return rec && rec.attempts > 0 && !isGraduated(rec);
-        }).length;
+        const foundCat = items.filter(t => t._sess === "ok").length;   // trouvés ce tour-ci
+        const pct = Math.round(foundCat / items.length * 100);
         const row = document.createElement("div"); row.className = "cnt-row";
-        const pctGrad = Math.round(graduated / items.length * 100);
-        const pctSched = Math.round(scheduled / items.length * 100);
         row.innerHTML = `<span class="cnt-label">${cat}</span>`
-          + `<span class="cnt-bar" style="display:flex"><i style="width:${pctGrad}%;background:var(--ok)"></i><i style="width:${pctSched}%;background:var(--accent)"></i></span>`
-          + `<span class="cnt-num">${graduated}/${items.length}</span>`;
+          + `<span class="cnt-bar"><i style="width:${pct}%"></i></span>`
+          + `<span class="cnt-num">${foundCat}/${items.length}</span>`;
         box.appendChild(row);
       });
     });
@@ -879,13 +871,6 @@
     document.getElementById("idk").addEventListener("click", onIDK);
     document.getElementById("restart").addEventListener("click", function () { startRound(); });
     document.getElementById("solution-toggle").addEventListener("click", function () { setSolutionMode(!solutionMode); });
-    document.getElementById("hide").addEventListener("change", function () { hideMastered = this.checked; startRound(); });
-    document.getElementById("reset").addEventListener("click", function () {
-      if (!confirm("Effacer la progression mémorisée pour cet arrondissement ?")) return;
-      delete PROGRESS.items[currentInsee];
-      saveProgress(PROGRESS);
-      startRound();
-    });
     document.getElementById("review-btn").addEventListener("click", startDueReview);
     document.getElementById("stats-btn").addEventListener("click", function () { openModal("stats"); });
     document.getElementById("history-btn").addEventListener("click", function () { openModal("history"); });
@@ -904,6 +889,12 @@
     },
     reviewMistakes: startMistakesReview,
     viewSolution() { closeModal(); setSolutionMode(true); },
+    resetArr() {
+      if (!confirm("Effacer la progression mémorisée pour cet arrondissement ? (n'affecte pas le tour en cours)")) return;
+      delete PROGRESS.items[currentInsee];
+      saveProgress(PROGRESS);
+      updateCounters(); renderModal();
+    },
     exportHistory,
     importHistory,
     clearHistory
