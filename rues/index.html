@@ -32,7 +32,7 @@
   .contour-line{fill:none;stroke:var(--contourln);stroke-width:1.4}
 
   /* États carto */
-  .axe{stroke:var(--ink);stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;transition:stroke .12s,stroke-width .12s}
+  .axe{stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:stroke .12s,stroke-width .12s}
   .axe.b{stroke:var(--ink-soft);stroke-width:1.1}
   .poi-contour{fill:rgba(94,125,120,.10);stroke:var(--poi);stroke-width:1;transition:fill .12s,stroke .12s}
   .poi-circle{fill:rgba(94,125,120,.07);stroke:var(--poi);stroke-width:1;stroke-dasharray:3 3}
@@ -71,6 +71,17 @@
   #solution-toggle::after{content:"activer";font:500 11px ui-monospace,Menlo,monospace;color:var(--panel-dim)}
   #solution-toggle[data-on="1"]{border-color:var(--accent)}
   #solution-toggle[data-on="1"]::after{content:"désactiver";color:var(--accent)}
+  #tier-filter{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:-8px}
+  #tier-filter[hidden]{display:none}
+  .tf-label{font:500 11px ui-monospace,Menlo,monospace;color:var(--panel-dim);text-transform:uppercase;letter-spacing:.06em}
+  .tf-seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .tf-seg button{border:none;border-radius:0;padding:6px 13px;background:var(--panel-2);color:var(--panel-dim);font-size:12px;font-weight:600}
+  .tf-seg button+button{border-left:1px solid var(--line)}
+  .tf-seg button:hover{background:#3a454e;color:var(--panel-text)}
+  .tf-seg button.on{background:var(--accent);color:var(--panel);cursor:default}
+  /* Filtre palier — actif uniquement en mode solution (voir setSolutionMode). Les POIs restent visibles. */
+  #map[data-tier="A"] .axe.b{display:none}
+  #map[data-tier="B"] .axe:not(.b){display:none}
   #counters{display:flex;flex-direction:column;gap:6px;margin-top:2px}
   .cnt-head{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--panel-dim);margin-top:8px;margin-bottom:2px}
   .cnt-row{display:grid;grid-template-columns:1fr 56px 34px;align-items:center;gap:9px;font-size:12.5px}
@@ -147,6 +158,14 @@
         <button id="restart">Nouveau tour</button>
       </div>
       <button id="solution-toggle" data-on="0">Mode solution</button>
+      <div id="tier-filter" hidden>
+        <span class="tf-label">Palier</span>
+        <div class="tf-seg" role="group" aria-label="Filtre palier">
+          <button type="button" data-tier="A">A</button>
+          <button type="button" data-tier="AB" class="on">A+B</button>
+          <button type="button" data-tier="B">B</button>
+        </div>
+      </div>
       <div class="row nav-row">
         <button id="review-btn" class="nav-btn" disabled><span>À réviser</span><span class="badge-count">0</span></button>
         <button id="stats-btn" class="nav-btn"><span>Stats</span></button>
@@ -488,6 +507,7 @@
 
   // ---------- État de jeu ----------
   let solutionMode = false;
+  let solutionTier = "AB";        // filtre du mode solution : "A" | "AB" | "B" (revue de la séparation des paliers)
   let PROGRESS = loadProgress();
   let queue = [], qi = 0, current = null, found = 0, totalRound = 0;
   let hi = [], busy = false;
@@ -737,7 +757,10 @@
     return (best && bd <= HIT) ? [best] : [];
   }
   function solutionCandidates(mx, my) {
-    return targets.filter(t => t.dist(mx, my) <= HIT);
+    // Ne propose que les cibles visibles sous le filtre palier courant (les axes masqués
+    // ne doivent être ni survolés ni listés dans l'info-bulle). Les POIs restent toujours visibles.
+    return targets.filter(t => (t.kind !== "axe" || solutionTier === "AB" || t.tier === solutionTier)
+                               && t.dist(mx, my) <= HIT);
   }
   function onMove(evt) {
     const [mx, my] = svgPoint(evt);
@@ -792,9 +815,15 @@
     if (solutionMode || busy || !current) return;
     terminalMiss(current, "idk");
   }
+  function applyTierFilter() {
+    // Le filtre palier n'agit qu'en mode solution ; hors mode solution tout le réseau est affiché.
+    if (svg) svg.dataset.tier = solutionMode ? solutionTier : "AB";
+  }
   function setSolutionMode(on) {
     solutionMode = on;
     document.getElementById("solution-toggle").setAttribute("data-on", on ? "1" : "0");
+    document.getElementById("tier-filter").hidden = !on;
+    applyTierFilter();
     clearHi(); hi = []; hideTooltip(); svg.style.cursor = "default";
     if (on) {
       setMsg("");
@@ -871,6 +900,14 @@
     document.getElementById("idk").addEventListener("click", onIDK);
     document.getElementById("restart").addEventListener("click", function () { startRound(); });
     document.getElementById("solution-toggle").addEventListener("click", function () { setSolutionMode(!solutionMode); });
+    document.querySelectorAll("#tier-filter .tf-seg button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        solutionTier = b.dataset.tier;
+        document.querySelectorAll("#tier-filter .tf-seg button").forEach(function (x) { x.classList.toggle("on", x === b); });
+        applyTierFilter();
+        clearHi(); hi = []; hideTooltip();
+      });
+    });
     document.getElementById("review-btn").addEventListener("click", startDueReview);
     document.getElementById("stats-btn").addEventListener("click", function () { openModal("stats"); });
     document.getElementById("history-btn").addEventListener("click", function () { openModal("history"); });
