@@ -234,8 +234,29 @@
   }
   function loadProgress() {
     const raw = Store.get(PROGRESS_KEY);
-    if (raw) { try { return JSON.parse(raw); } catch (e) { /* repli sur migration/fresh */ } }
-    return migrateFromMastered();
+    let store = null;
+    if (raw) { try { store = JSON.parse(raw); } catch (e) { /* repli sur migration/fresh */ } }
+    if (!store) store = migrateFromMastered();
+    return healProgress(store);
+  }
+  // Correctif ponctuel (v2) : l'ancien applyGrade faisait box++ dès la 1re bonne
+  // réponse, poussant tout item réussi du premier coup en box 1 ("en révision")
+  // au lieu de le laisser solide (box 0). Sous la logique corrigée, box >= 1
+  // implique forcément un vrai raté (misses >= 1) ; donc tout item box >= 1 sans
+  // aucun raté est un résidu du bug -> on le repasse solide, sans perdre les vrais
+  // ratés. Lossless, calqué sur la sémantique de métro.
+  function healProgress(store) {
+    if (!store || store.version >= 2) return store;
+    Object.keys(store.items || {}).forEach(insee => {
+      const items = store.items[insee];
+      Object.keys(items).forEach(name => {
+        const rec = items[name];
+        if (rec.box >= 1 && !(rec.misses > 0)) { rec.box = 0; rec.due = 0; }
+      });
+    });
+    store.version = 2;
+    saveProgress(store);
+    return store;
   }
   function saveProgress(store) { Store.set(PROGRESS_KEY, JSON.stringify(store)); }
 
@@ -255,12 +276,13 @@
     const rec = PROGRESS.items[insee][name] || { box: 0, due: 0, attempts: 0, misses: 0, lastSeen: 0 };
     rec.attempts++; rec.lastSeen = Date.now();
     if (grade === "clean") {
-      rec.box++;
-      if (rec.box > SR_MAXBOX) { rec.box = 0; rec.due = 0; }
-      else rec.due = nextDue(rec.box);
+      if (rec.box >= 1) rec.box++;          // juste du 1er coup depuis box 0 = solide, reste hors programme
     } else {
-      rec.misses++; rec.box = 1; rec.due = nextDue(1);
+      rec.misses++; rec.box = 1;            // entre / réinitialise la remédiation
     }
+    if (rec.box > SR_MAXBOX) { rec.box = 0; rec.due = 0; }   // diplômé
+    else if (rec.box >= 1) rec.due = nextDue(rec.box);
+    else rec.due = 0;
     PROGRESS.items[insee][name] = rec;
     saveProgress(PROGRESS);
   }
