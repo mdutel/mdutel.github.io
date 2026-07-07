@@ -74,9 +74,6 @@
   }
   .mode-btn.active{ background:#cfd3da; color:#11151a; border-color:#cfd3da; }
 
-  /* options row (correspondence mode segmented control) */
-  .opts-row{ display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
-  .opts-label{ font-size:12px; letter-spacing:0.04em; color:#cfd3da; font-weight:700; text-transform:uppercase; }
   .seg{ display:inline-flex; border:1px solid #2a313c; border-radius:8px; overflow:hidden; }
   .seg button{
     background:#1c2128; color:#aeb4bd; border:none; cursor:pointer;
@@ -268,6 +265,7 @@
   .feedback{ margin-top:10px; font-weight:700; font-size:13px; }
   .feedback.ok{ color: var(--ok); }
   .feedback.bad{ color: var(--bad); }
+  .feedback.hint{ color: var(--muted); }
 
   /* word bank for melange mode */
   .bank-filter{
@@ -287,19 +285,6 @@
   .stop.slot .dot{ border-style:dashed; }
   .stop.slot.target .dot{ border-color: var(--ink); }
   .stop.slot.wrong-flash .dot{ background: var(--bad); border-color: var(--bad); }
-
-  /* correspondance chips for picking lines */
-  .corr-options{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
-  .corr-opt{
-    border:2px solid #d8d4c4; background:#fff; color:var(--ink);
-    padding:7px 11px; border-radius:6px; font-size:12px; font-weight:800; cursor:pointer;
-    display:inline-flex; align-items:center; gap:6px;
-  }
-  .corr-swatch{ width:11px; height:11px; border-radius:50%; display:inline-block; flex-shrink:0; box-shadow: 0 0 0 1px rgba(0,0,0,0.12) inset; }
-  .corr-opt.selected{ background:var(--ink); color:#fff; border-color:var(--ink); }
-  .corr-opt.correct{ background:var(--ok); color:#fff; border-color:var(--ok); }
-  .corr-opt.missed{ background:#fff; color:var(--bad); border-color:var(--bad); border-style:dashed; }
-  .corr-opt.extra{ background:var(--bad); color:#fff; border-color:var(--bad); text-decoration:line-through; }
 
   .score{
     display:flex; flex-wrap:wrap; gap:6px 22px; font-size:12px; color:#9a9a92;
@@ -324,7 +309,6 @@
   <div id="trainChrome">
     <div class="tabs" id="tabs"></div>
     <div class="modes" id="modes"></div>
-    <div class="opts-row" id="optsRow"></div>
     <div class="review-banner" id="reviewBanner"></div>
     <div class="score" id="scorebar"></div>
   </div>
@@ -895,9 +879,6 @@ const LINES = {
 
 const GEO = {"stations":{"La Défense":[2.23702,48.89219],"Esplanade de la Défense":[2.24979,48.88814],"Pont de Neuilly":[2.26052,48.88471],"Les Sablons":[2.27224,48.88102],"Porte Maillot":[2.2838,48.87735],"Argentine":[2.29013,48.87534],"Charles de Gaulle - Étoile":[2.29477,48.8742],"George V":[2.30056,48.87202],"Franklin D. Roosevelt":[2.30994,48.86903],"Champs-Élysées - Clemenceau":[2.31388,48.8678],"Concorde":[2.32294,48.86629],"Tuileries":[2.33013,48.86434],"Palais Royal - Musée du Louvre":[2.33668,48.8626],"Louvre - Rivoli":[2.34111,48.86081],"Châtelet":[2.34763,48.85806],"Hôtel de Ville":[2.35129,48.85755],"Saint-Paul":[2.36096,48.85524],"Bastille":[2.36874,48.85344],"Gare de Lyon":[2.37326,48.84414],"Reuilly - Diderot":[2.38681,48.84735],"Nation":[2.39582,48.84824],"Porte de Vincennes":[2.40809,48.84734],"Saint-Mandé":[2.41876,48.84642],"Bérault":[2.42921,48.84547],"Château de Vincennes":[2.44044,48.84446],"Porte de Clignancourt":[2.34485,48.8974],"Simplon":[2.34743,48.89434],"Marcadet - Poissonniers":[2.34962,48.8915],"Château Rouge":[2.34956,48.88671],"Barbès - Rochechouart":[2.34953,48.88373],"Gare du Nord":[2.35633,48.88092],"Gare de l'Est":[2.35946,48.87738],"Château d'Eau":[2.35615,48.87262],"Strasbourg - Saint-Denis":[2.35428,48.86929],"Réaumur - Sébastopol":[2.35255,48.86624],"Étienne Marcel":[2.34962,48.86397],"Les Halles":[2.34579,48.86252],"Cité":[2.34732,48.85494],"Saint-Michel":[2.34603,48.85334],"Odéon":[2.34017,48.85212],"Saint-Germain-des-Prés":[2.33378,48.85372],"Saint-Sulpice":[2.3307,48.85107],"Saint-Placide":[2.32679,48.84688],"Montparnasse - Bienvenüe":[2.32051,48.84119],"Vavin":[2.32901,48.84222],"Raspail":[2.33075,48.83896],"Denfert-Rochereau":[2.3332,48.83307],"Mouton-Duvernet":[2.32971,48.83111],"Alésia":[2.32716,48.82819],"Porte d'Orléans":[2.32551,48.82315],"Mairie de Montrouge":[2.31974,48.81868],"Barbara":[2.31745,48.8097],"Bagneux - Lucie Aubrac":[2.31805,48.80363],"Kléber":[2.29324,48.87126],"Boissière":[2.29006,48.86698],"Trocadéro":[2.28717,48.86307],"Passy":[2.28581,48.85745],"Bir-Hakeim":[2.28933,48.85394],"Dupleix":[2.29361,48.85043],"La Motte-Picquet - Grenelle":[2.29792,48.84906],"Cambronne":[2.30297,48.84751],"Sèvres - Lecourbe":[2.30953,48.84563],"Pasteur":[2.31261,48.84292],"Edgar Quinet":[2.32638,48.84066],"Saint-Jacques":[2.33714,48.8329],"Glacière":[2.34351,48.83113],"Corvisart":[2.35041,48.82979],"Place d'Italie":[2.35583,48.831],"Nationale":[2.36286,48.83322],"Chevaleret":[2.36813,48.83495],"Quai de la Gare":[2.37283,48.83705],"Bercy":[2.37912,48.8403],"Dugommier":[2.38962,48.83904],"Daumesnil":[2.39595,48.83957],"Bel-Air":[2.40092,48.84134],"Picpus":[2.40129,48.84506],"Pont de Sèvres":[2.23103,48.82975],"Billancourt":[2.23744,48.83174],"Marcel Sembat":[2.24358,48.83363],"Porte de Saint-Cloud":[2.25712,48.83796],"Exelmans":[2.25961,48.84241],"Michel-Ange - Molitor":[2.26189,48.84524],"Michel-Ange - Auteuil":[2.26413,48.84794],"Jasmin":[2.26818,48.8525],"Ranelagh":[2.27011,48.85549],"La Muette":[2.27415,48.85805],"Rue de la Pompe":[2.27844,48.86394],"Iéna":[2.29416,48.86479],"Alma - Marceau":[2.30099,48.86477],"Saint-Philippe du Roule":[2.31002,48.87205],"Miromesnil":[2.31447,48.87369],"Saint-Augustin":[2.322,48.87448],"Havre - Caumartin":[2.327,48.87381],"Chaussée d'Antin - La Fayette":[2.33326,48.87297],"Richelieu - Drouot":[2.34005,48.87201],"Grands Boulevards":[2.34456,48.87126],"Bonne Nouvelle":[2.34849,48.87059],"République":[2.36383,48.8675],"Oberkampf":[2.36796,48.865],"Saint-Ambroise":[2.37394,48.86148],"Voltaire":[2.38002,48.85788],"Charonne":[2.3847,48.85509],"Rue des Boulets":[2.38963,48.85217],"Buzenval":[2.40193,48.85198],"Maraîchers":[2.40609,48.85273],"Porte de Montreuil":[2.41189,48.85377],"Robespierre":[2.42298,48.85573],"Croix de Chavaux":[2.43454,48.85778],"Mairie de Montreuil":[2.44152,48.8623],"Saint-Denis - Pleyel":[2.34654,48.91747],"Mairie de Saint-Ouen":[2.33429,48.91258],"Saint-Ouen":[2.32263,48.90457],"Porte de Clichy":[2.3156,48.89417],"Pont Cardinet":[2.31373,48.88822],"Saint-Lazare":[2.32573,48.87593],"Madeleine":[2.32516,48.87023],"Pyramides":[2.33443,48.86576],"Cour Saint-Émilion":[2.38663,48.83334],"Bibliothèque François Mitterrand":[2.3777,48.82888],"Olympiades":[2.36717,48.82716],"Maison Blanche":[2.35879,48.82182],"Hôpital Bicêtre":[2.34975,48.80981],"Villejuif - Gustave Roussy":[2.34937,48.79305],"L'Haÿ-les-Roses":[2.35436,48.77531],"Chevilly-Larue":[2.36649,48.75955],"Thiais - Orly":[2.37284,48.74698],"Aéroport d'Orly":[2.36259,48.72808],"Porte Dauphine":[2.27708,48.87147],"Victor Hugo":[2.28534,48.8698],"Ternes":[2.29831,48.87797],"Courcelles":[2.30407,48.87933],"Monceau":[2.30877,48.88033],"Villiers":[2.31472,48.88109],"Rome":[2.3218,48.88233],"Place de Clichy":[2.32723,48.88343],"Blanche":[2.33338,48.88356],"Pigalle":[2.33709,48.88244],"Anvers":[2.34467,48.88297],"La Chapelle":[2.3604,48.8844],"Stalingrad":[2.36737,48.88433],"Jaurès":[2.37012,48.88274],"Colonel Fabien":[2.37081,48.87761],"Belleville":[2.37703,48.87199],"Couronnes":[2.38054,48.86909],"Ménilmontant":[2.3836,48.86645],"Père Lachaise":[2.38743,48.86295],"Philippe Auguste":[2.39086,48.85806],"Alexandre Dumas":[2.39468,48.85623],"Avron":[2.398,48.85191],"Anatole France":[2.28501,48.89208],"Louise Michel":[2.28808,48.88871],"Porte de Champerret":[2.29264,48.88595],"Pereire":[2.29928,48.88604],"Wagram":[2.30467,48.88381],"Malesherbes":[2.30905,48.88289],"Europe":[2.32227,48.87877],"Opéra":[2.33235,48.87068],"Quatre-Septembre":[2.33623,48.86964],"Bourse":[2.34138,48.86865],"Sentier":[2.34655,48.86751],"Arts et Métiers":[2.35674,48.86559],"Temple":[2.3608,48.86651],"Parmentier":[2.37458,48.86525],"Rue Saint-Maur":[2.37974,48.86429],"Gambetta":[2.398,48.86494],"Porte de Bagnolet":[2.40876,48.86459],"Gallieni":[2.4167,48.86534],"Bobigny - Pablo Picasso":[2.44919,48.90637],"Bobigny - Pantin - Raymond Queneau":[2.42533,48.89545],"Église de Pantin":[2.41276,48.89315],"Hoche":[2.40235,48.89123],"Porte de Pantin":[2.39178,48.88842],"Ourcq":[2.38591,48.88686],"Laumière":[2.37872,48.88497],"Jacques Bonsergent":[2.3614,48.8704],"Richard-Lenoir":[2.37191,48.85987],"Bréguet - Sabin":[2.37021,48.85614],"Quai de la Rapée":[2.36591,48.84648],"Gare d'Austerlitz":[2.36543,48.84253],"Saint-Marcel":[2.36097,48.83843],"Campo-Formio":[2.35857,48.83515],"Pont de Levallois - Bécon":[2.28041,48.89715],"Châtillon - Montrouge":[2.30168,48.81075],"Malakoff - Plateau de Vanves":[2.29846,48.82258],"Malakoff - Rue Étienne Dolet":[2.29708,48.81531],"Porte de Vanves":[2.30534,48.8277],"Plaisance":[2.31412,48.83183],"Pernety":[2.31862,48.83423],"Gaîté":[2.32249,48.83863],"Duroc":[2.31663,48.84685],"Saint-François-Xavier":[2.31441,48.85144],"Varenne":[2.31506,48.85687],"Invalides":[2.31251,48.86288],"Liège":[2.32702,48.87963],"La Fourche":[2.32578,48.88718],"Guy Môquet":[2.32722,48.89221],"Porte de Saint-Ouen":[2.32894,48.89737],"Garibaldi":[2.33183,48.90609],"Carrefour Pleyel":[2.34261,48.91901],"Saint-Denis - Porte de Paris":[2.35604,48.92994],"Basilique de Saint-Denis":[2.36008,48.93742],"Saint-Denis - Université":[2.36464,48.94587],"Brochant":[2.32017,48.89059],"Mairie de Clichy":[2.30601,48.90323],"Gabriel Péri":[2.29469,48.91638],"Les Agnettes":[2.28628,48.9231],"Asnières - Gennevilliers - Les Courtilles":[2.28417,48.93076],"La Courneuve - 8 Mai 1945":[2.4106,48.92079],"Fort d'Aubervilliers":[2.40441,48.91495],"Aubervilliers - Pantin - Quatre Chemins":[2.39222,48.90378],"Porte de la Villette":[2.38551,48.89739],"Corentin Cariou":[2.38216,48.89466],"Crimée":[2.37709,48.89091],"Riquet":[2.37346,48.88797],"Louis Blanc":[2.36469,48.88107],"Château-Landon":[2.36197,48.87844],"Poissonnière":[2.34878,48.8771],"Cadet":[2.34457,48.87601],"Le Peletier":[2.34058,48.87497],"Pont Neuf":[2.34223,48.85855],"Pont Marie":[2.35716,48.85358],"Sully - Morland":[2.36152,48.85162],"Jussieu":[2.35492,48.84615],"Place Monge":[2.35222,48.84287],"Censier - Daubenton":[2.35161,48.84023],"Les Gobelins":[2.35254,48.83593],"Tolbiac":[2.35725,48.82643],"Porte d'Italie":[2.36013,48.81905],"Porte de Choisy":[2.36453,48.81988],"Porte d'Ivry":[2.36929,48.82136],"Pierre et Marie Curie":[2.37727,48.81593],"Mairie d'Ivry":[2.38429,48.81052],"Le Kremlin-Bicêtre":[2.36226,48.81013],"Villejuif - Léo Lagrange":[2.36395,48.80469],"Villejuif - Paul Vaillant-Couturier":[2.36827,48.79648],"Villejuif - Louis Aragon":[2.3678,48.78756],"Rambuteau":[2.3535,48.8612],"Goncourt":[2.37109,48.86996],"Pyrénées":[2.38532,48.87388],"Jourdain":[2.38942,48.87511],"Place des Fêtes":[2.39306,48.87681],"Télégraphe":[2.39887,48.87547],"Porte des Lilas":[2.40661,48.87721],"Mairie des Lilas":[2.41648,48.87976],"Serge Gainsbourg":[2.42719,48.88132],"Romainville - Carnot":[2.44082,48.88314],"Montreuil - Hôpital":[2.45471,48.87834],"La Dhuys":[2.46547,48.87799],"Coteaux Beauclair":[2.46736,48.88224],"Rosny-Bois-Perrier":[2.4809,48.88263],"Balard":[2.27833,48.8363],"Lourmel":[2.28214,48.83873],"Boucicaut":[2.28795,48.84109],"Félix Faure":[2.29191,48.84275],"Commerce":[2.29395,48.84479],"École Militaire":[2.3064,48.85489],"La Tour-Maubourg":[2.31057,48.85773],"Filles du Calvaire":[2.36666,48.86326],"Saint-Sébastien - Froissart":[2.36721,48.86117],"Chemin Vert":[2.36818,48.8571],"Ledru-Rollin":[2.3751,48.85152],"Faidherbe - Chaligny":[2.38409,48.85018],"Montgallet":[2.39048,48.84407],"Michel Bizot":[2.40233,48.83712],"Porte Dorée":[2.40535,48.83476],"Porte de Charenton":[2.40031,48.83274],"Liberté":[2.40585,48.82662],"Charenton - Écoles":[2.41313,48.8219],"École Vétérinaire de Maisons-Alfort":[2.42238,48.8148],"Maisons-Alfort - Stade":[2.43451,48.80914],"Maisons-Alfort - Les Juilliottes":[2.44557,48.80336],"Créteil - L'Échat":[2.44941,48.79668],"Créteil - Université":[2.45051,48.78992],"Créteil - Préfecture":[2.45936,48.78],"Créteil - Pointe du Lac":[2.46441,48.76876],"Mairie d'Aubervilliers":[2.38074,48.91371],"Aimé Césaire":[2.37774,48.90808],"Aubervilliers - Front Populaire":[2.36592,48.90657],"Porte de la Chapelle":[2.35939,48.89839],"Marx Dormoy":[2.36,48.89049],"Jules Joffrin":[2.34476,48.89242],"Lamarck - Caulaincourt":[2.33876,48.88967],"Abbesses":[2.33795,48.88459],"Saint-Georges":[2.33786,48.87817],"Notre-Dame-de-Lorette":[2.3375,48.87605],"Trinité - d'Estienne d'Orves":[2.33311,48.87633],"Assemblée nationale":[2.321,48.86079],"Solférino":[2.32317,48.8585],"Rue du Bac":[2.32582,48.8552],"Sèvres - Babylone":[2.32694,48.85138],"Rennes":[2.32778,48.84846],"Notre-Dame-des-Champs":[2.32878,48.84494],"Falguière":[2.31785,48.84447],"Volontaires":[2.30795,48.84151],"Vaugirard":[2.30111,48.83952],"Convention":[2.29623,48.8371],"Porte de Versailles":[2.28825,48.8326],"Corentin Celton":[2.27941,48.82709],"Mairie d'Issy":[2.27367,48.82431],"Boulogne - Pont de Saint-Cloud":[2.22854,48.84075],"Boulogne - Jean Jaurès":[2.23889,48.84201],"Chardon Lagache":[2.26644,48.8452],"Mirabeau":[2.27276,48.84713],"Porte d'Auteuil":[2.25774,48.84797],"Église d'Auteuil":[2.26914,48.84715],"Javel - André Citroën":[2.27804,48.84716],"Charles Michels":[2.286,48.84653],"Avenue Émile Zola":[2.29502,48.847],"Ségur":[2.3074,48.84707],"Vaneau":[2.32126,48.84882],"Mabillon":[2.3355,48.85302],"Cluny - La Sorbonne":[2.34427,48.85105],"Maubert - Mutualité":[2.34821,48.85009],"Cardinal Lemoine":[2.35162,48.84666],"Pelleport":[2.40156,48.86844],"Saint-Fargeau":[2.40451,48.8721],"Bolivar":[2.3745,48.88067],"Buttes Chaumont":[2.38161,48.87851],"Botzaris":[2.38857,48.87949],"Pré-Saint-Gervais":[2.39847,48.88027],"Danube":[2.39401,48.88182]},"arr":[{"ar":1,"ring":[[2.34459,48.85405],[2.34286,48.85486],[2.34085,48.85656],[2.33755,48.85839],[2.3299,48.86013],[2.3209,48.86306],[2.32532,48.86901],[2.32516,48.86945],[2.32799,48.86993],[2.33066,48.86819],[2.35095,48.86341],[2.34756,48.85735],[2.34699,48.85701],[2.3459,48.85531],[2.34459,48.85405]]},{"ar":2,"ring":[[2.34118,48.86575],[2.33066,48.86819],[2.32801,48.86992],[2.34004,48.87198],[2.34788,48.8707],[2.35426,48.86933],[2.35095,48.86341],[2.34118,48.86575]]},{"ar":3,"ring":[[2.36848,48.85583],[2.36445,48.85641],[2.36175,48.85725],[2.35937,48.85832],[2.3569,48.86007],[2.35334,48.86127],[2.35016,48.86199],[2.35426,48.86933],[2.36327,48.86784],[2.36425,48.86725],[2.36675,48.86306],[2.36848,48.85583]]},{"ar":4,"ring":[[2.36851,48.85573],[2.36914,48.85316],[2.3665,48.84737],[2.36443,48.84614],[2.36249,48.84762],[2.35918,48.84948],[2.35371,48.85122],[2.35004,48.852],[2.34459,48.85405],[2.3459,48.85531],[2.34699,48.85701],[2.34756,48.85735],[2.35016,48.86199],[2.35334,48.86127],[2.3569,48.86007],[2.35937,48.85832],[2.36175,48.85725],[2.36445,48.85641],[2.36851,48.85573]]},{"ar":5,"ring":[[2.34987,48.85206],[2.35371,48.85122],[2.35935,48.8494],[2.36249,48.84762],[2.36603,48.84493],[2.36495,48.84427],[2.36182,48.83996],[2.35179,48.83678],[2.347,48.83732],[2.33673,48.83965],[2.33679,48.8407],[2.3373,48.84093],[2.34459,48.85405],[2.34987,48.85206]]},{"ar":6,"ring":[[2.34268,48.85036],[2.3373,48.84093],[2.33679,48.8407],[2.33673,48.83965],[2.3202,48.84511],[2.31657,48.84683],[2.31935,48.84784],[2.32719,48.85162],[2.32842,48.85182],[2.32931,48.85261],[2.33084,48.8552],[2.33327,48.85827],[2.33245,48.85851],[2.33291,48.85935],[2.33755,48.85839],[2.34085,48.85656],[2.34286,48.85486],[2.34459,48.85405],[2.34268,48.85036]]},{"ar":7,"ring":[[2.32213,48.84925],[2.31908,48.84773],[2.31373,48.84593],[2.31053,48.84799],[2.30734,48.84714],[2.28984,48.85824],[2.29509,48.86196],[2.29792,48.86298],[2.30159,48.86347],[2.31861,48.86377],[2.33291,48.85935],[2.33245,48.85851],[2.33327,48.85827],[2.33084,48.8552],[2.32931,48.85261],[2.32842,48.85182],[2.32719,48.85162],[2.32213,48.84925]]},{"ar":8,"ring":[[2.32333,48.86618],[2.3209,48.86306],[2.31854,48.86378],[2.30159,48.86347],[2.30152,48.86453],[2.2999,48.86533],[2.29891,48.86856],[2.29753,48.87092],[2.29504,48.87378],[2.29815,48.87808],[2.30861,48.88032],[2.31665,48.88133],[2.32718,48.88348],[2.32685,48.87563],[2.32658,48.87558],[2.32705,48.87374],[2.32584,48.86956],[2.32516,48.86945],[2.32532,48.86901],[2.32333,48.86618]]},{"ar":9,"ring":[[2.34866,48.87663],[2.34791,48.87402],[2.34788,48.8707],[2.34004,48.87198],[2.32584,48.86956],[2.32705,48.87374],[2.32658,48.87558],[2.32685,48.87563],[2.32718,48.88348],[2.32814,48.88371],[2.32944,48.88455],[2.3373,48.8824],[2.33982,48.88202],[2.34951,48.88372],[2.34986,48.88063],[2.34929,48.87905],[2.34911,48.87748],[2.34866,48.87663]]},{"ar":10,"ring":[[2.35426,48.86933],[2.34788,48.8707],[2.34791,48.87402],[2.34825,48.87579],[2.34911,48.87748],[2.34929,48.87905],[2.34986,48.88063],[2.34951,48.88372],[2.3593,48.88443],[2.36858,48.88402],[2.36922,48.88321],[2.37022,48.88268],[2.37028,48.87799],[2.37699,48.87206],[2.36383,48.8675],[2.36327,48.86784],[2.35426,48.86933]]},{"ar":11,"ring":[[2.37379,48.85186],[2.37174,48.85248],[2.37035,48.85325],[2.36914,48.85316],[2.36675,48.86306],[2.36425,48.86725],[2.36383,48.8675],[2.37699,48.87206],[2.38308,48.86718],[2.38346,48.86645],[2.3873,48.86309],[2.38958,48.85853],[2.39228,48.85769],[2.39444,48.85657],[2.39843,48.85135],[2.39926,48.84884],[2.39912,48.8481],[2.39592,48.84839],[2.38378,48.85021],[2.37882,48.85063],[2.37379,48.85186]]},{"ar":12,"ring":[[2.41388,48.83357],[2.41699,48.83395],[2.42225,48.83569],[2.4216,48.8369],[2.42086,48.83962],[2.41957,48.84153],[2.41942,48.84248],[2.41988,48.84343],[2.42211,48.8445],[2.42474,48.84177],[2.43719,48.84089],[2.43794,48.84457],[2.44051,48.84434],[2.44088,48.84521],[2.44077,48.84592],[2.44653,48.84575],[2.44641,48.84493],[2.45807,48.84345],[2.46221,48.84255],[2.4642,48.84173],[2.46582,48.84061],[2.46976,48.83641],[2.46953,48.83495],[2.46903,48.83409],[2.46625,48.83239],[2.46516,48.831],[2.46464,48.82936],[2.46461,48.82763],[2.46618,48.82733],[2.46472,48.82328],[2.46252,48.81927],[2.4628,48.81903],[2.45863,48.81701],[2.45321,48.81725],[2.44963,48.81796],[2.44266,48.81796],[2.4398,48.81837],[2.43735,48.81822],[2.43747,48.8191],[2.43693,48.81938],[2.43515,48.81965],[2.43418,48.81928],[2.4343,48.82016],[2.43248,48.82142],[2.43289,48.82169],[2.43262,48.8219],[2.43219,48.82162],[2.43037,48.82288],[2.43069,48.82323],[2.42998,48.82349],[2.42624,48.82421],[2.42017,48.82414],[2.41661,48.8248],[2.41284,48.8248],[2.41061,48.82509],[2.40863,48.8259],[2.40474,48.82863],[2.40249,48.82965],[2.39435,48.82751],[2.39026,48.82573],[2.37893,48.83449],[2.37309,48.83967],[2.36443,48.84614],[2.3665,48.84737],[2.36914,48.85316],[2.37028,48.85326],[2.37197,48.8524],[2.37882,48.85063],[2.38378,48.85021],[2.39592,48.84839],[2.41599,48.84661],[2.41351,48.83788],[2.4123,48.83462],[2.41122,48.83386],[2.41388,48.83357]]},{"ar":13,"ring":[[2.36771,48.81742],[2.3634,48.81606],[2.35592,48.81597],[2.3524,48.81853],[2.34692,48.81587],[2.34443,48.81611],[2.3445,48.81558],[2.34397,48.81577],[2.3441,48.81763],[2.34463,48.81954],[2.34268,48.82119],[2.34144,48.82367],[2.34169,48.82604],[2.34114,48.83249],[2.34207,48.83836],[2.347,48.83732],[2.35184,48.83679],[2.36182,48.83996],[2.36495,48.84427],[2.36603,48.84493],[2.37309,48.83967],[2.37893,48.83449],[2.39026,48.82573],[2.38152,48.82241],[2.38076,48.8217],[2.36771,48.81742]]},{"ar":14,"ring":[[2.32113,48.8399],[2.32138,48.83978],[2.32184,48.84017],[2.32149,48.84101],[2.32471,48.84361],[2.33673,48.83965],[2.34207,48.83836],[2.34114,48.83249],[2.34169,48.82604],[2.34144,48.82367],[2.34268,48.82119],[2.34463,48.81954],[2.3441,48.81763],[2.34397,48.81577],[2.34171,48.81634],[2.33175,48.81704],[2.33237,48.81822],[2.3012,48.82515],[2.31993,48.84052],[2.32113,48.8399]]},{"ar":15,"ring":[[2.28049,48.83192],[2.27903,48.83246],[2.27551,48.82959],[2.27275,48.82793],[2.26783,48.82784],[2.26763,48.82796],[2.26732,48.83149],[2.27004,48.833],[2.26785,48.83456],[2.2673,48.83465],[2.26296,48.8339],[2.27571,48.84696],[2.27916,48.84977],[2.28811,48.85612],[2.28894,48.85746],[2.28984,48.85824],[2.30734,48.84714],[2.31053,48.84799],[2.31373,48.84593],[2.31657,48.84683],[2.31915,48.84551],[2.32471,48.84361],[2.32149,48.84101],[2.32184,48.84017],[2.32138,48.83978],[2.31993,48.84052],[2.3012,48.82515],[2.29222,48.82714],[2.28049,48.83192]]},{"ar":16,"ring":[[2.29268,48.86044],[2.28913,48.85766],[2.28811,48.85612],[2.27916,48.84977],[2.27571,48.84696],[2.26296,48.8339],[2.25515,48.83481],[2.25165,48.8389],[2.25122,48.8429],[2.25254,48.84558],[2.25066,48.84563],[2.24247,48.84773],[2.2395,48.85006],[2.22415,48.85344],[2.22408,48.85396],[2.22433,48.85595],[2.22498,48.85782],[2.22825,48.86516],[2.23212,48.86955],[2.24026,48.87179],[2.24335,48.87412],[2.24562,48.87635],[2.25482,48.87408],[2.25541,48.87426],[2.25841,48.8801],[2.25888,48.88028],[2.27749,48.87796],[2.2798,48.87865],[2.29504,48.87378],[2.29753,48.87092],[2.29891,48.86856],[2.2999,48.86533],[2.30152,48.86453],[2.30159,48.86347],[2.29923,48.86327],[2.29652,48.86256],[2.2942,48.86152],[2.29268,48.86044]]},{"ar":17,"ring":[[2.3165,48.88132],[2.30861,48.88032],[2.29815,48.87808],[2.29504,48.87378],[2.2798,48.87865],[2.28091,48.88288],[2.28566,48.88657],[2.29154,48.88945],[2.29506,48.88987],[2.3075,48.89594],[2.31227,48.89774],[2.31852,48.89963],[2.32039,48.90076],[2.33015,48.90104],[2.32559,48.8875],[2.32743,48.88352],[2.3165,48.88132]]},{"ar":18,"ring":[[2.3658,48.88554],[2.36469,48.88437],[2.35911,48.88442],[2.34951,48.88372],[2.33982,48.88202],[2.3373,48.8824],[2.32944,48.88455],[2.32743,48.88352],[2.32559,48.8875],[2.33015,48.90104],[2.37029,48.90186],[2.37039,48.89663],[2.37179,48.89541],[2.37002,48.89403],[2.36679,48.88664],[2.3658,48.88554]]},{"ar":19,"ring":[[2.4094,48.88019],[2.41084,48.87842],[2.40257,48.87601],[2.39533,48.87525],[2.3904,48.87545],[2.38855,48.87479],[2.38677,48.8746],[2.38492,48.87375],[2.37699,48.87206],[2.37028,48.87799],[2.37018,48.88274],[2.36922,48.88321],[2.36838,48.88409],[2.36469,48.88437],[2.36679,48.88664],[2.37002,48.89403],[2.37179,48.89541],[2.37039,48.89663],[2.37029,48.90186],[2.38443,48.90216],[2.39071,48.90098],[2.39552,48.89827],[2.39777,48.89461],[2.39919,48.88823],[2.39921,48.88542],[2.40011,48.88381],[2.40149,48.88262],[2.40463,48.88123],[2.4094,48.88019]]},{"ar":20,"ring":[[2.38314,48.86708],[2.37699,48.87206],[2.38492,48.87375],[2.38677,48.8746],[2.38855,48.87479],[2.38978,48.87533],[2.39533,48.87525],[2.40257,48.87601],[2.41084,48.87842],[2.4125,48.87638],[2.41364,48.87245],[2.41401,48.8689],[2.41386,48.86408],[2.41643,48.84879],[2.41599,48.84661],[2.39912,48.8481],[2.39926,48.84884],[2.39843,48.85135],[2.39444,48.85657],[2.39228,48.85769],[2.38956,48.85855],[2.38743,48.86291],[2.38346,48.86645],[2.38314,48.86708]]}],"water":[[[2.32996,48.86071],[2.33192,48.86011],[2.33796,48.85906],[2.33734,48.85786],[2.33521,48.85824],[2.32995,48.85946],[2.3221,48.86214],[2.31733,48.86326],[2.30185,48.86299],[2.29901,48.86271],[2.29535,48.86143],[2.29016,48.8578],[2.28911,48.85838],[2.29426,48.86238],[2.29737,48.86332],[2.30141,48.86403],[2.3185,48.8644],[2.32996,48.86071]],[[2.3674,48.84296],[2.36386,48.84555],[2.36541,48.84647],[2.37372,48.84016],[2.37601,48.83808],[2.37586,48.83794],[2.39095,48.82603],[2.38945,48.82534],[2.38559,48.82794],[2.3845,48.82916],[2.37686,48.83513],[2.37212,48.83954],[2.3674,48.84296]],[[2.27462,48.84695],[2.27721,48.84949],[2.27906,48.84835],[2.27563,48.84592],[2.2691,48.83876],[2.26436,48.83414],[2.26296,48.8339],[2.26163,48.83405],[2.26608,48.83801],[2.266,48.83826],[2.27462,48.84695]],[[2.22415,48.85344],[2.22433,48.85595],[2.22575,48.85971],[2.22729,48.86257],[2.22825,48.86516],[2.23062,48.86799],[2.23213,48.86956],[2.24042,48.87187],[2.24335,48.87412],[2.24563,48.87636],[2.24586,48.87629],[2.24351,48.87355],[2.24118,48.87204],[2.23435,48.86965],[2.23131,48.86744],[2.22966,48.86545],[2.2289,48.86404],[2.22827,48.86197],[2.22547,48.85607],[2.22529,48.85392],[2.22557,48.85313],[2.22415,48.85344]],[[2.36598,48.84314],[2.36751,48.84184],[2.36717,48.84135],[2.36806,48.8403],[2.36854,48.84022],[2.36794,48.83999],[2.37028,48.83699],[2.37054,48.83709],[2.37095,48.83629],[2.37058,48.83611],[2.366,48.84059],[2.36541,48.8409],[2.36381,48.84061],[2.36345,48.84174],[2.3648,48.84354],[2.36543,48.84355],[2.36598,48.84314]],[[2.35142,48.85549],[2.35201,48.85525],[2.35136,48.85455],[2.34965,48.85542],[2.34544,48.85662],[2.33938,48.8578],[2.33972,48.85877],[2.34026,48.85869],[2.34893,48.85646],[2.35142,48.85549]],[[2.279,48.85074],[2.28642,48.85621],[2.28742,48.85562],[2.27957,48.84994],[2.27864,48.85053],[2.279,48.85074]],[[2.28308,48.85222],[2.2876,48.85544],[2.28827,48.85487],[2.28051,48.84937],[2.27958,48.84993],[2.28308,48.85222]],[[2.35458,48.85415],[2.36051,48.85196],[2.3609,48.85153],[2.36118,48.84972],[2.36174,48.84905],[2.36039,48.84949],[2.3601,48.85027],[2.3602,48.85109],[2.35984,48.85152],[2.35322,48.85378],[2.35382,48.85443],[2.35458,48.85415]],[[2.345,48.85418],[2.3497,48.8523],[2.35261,48.8516],[2.35242,48.85119],[2.35159,48.85136],[2.34439,48.85389],[2.34257,48.85477],[2.34078,48.85628],[2.33878,48.85733],[2.33931,48.85772],[2.34112,48.85668],[2.34303,48.85503],[2.345,48.85418]],[[2.35541,48.85127],[2.36025,48.84943],[2.35938,48.84877],[2.35353,48.85088],[2.354,48.85155],[2.35541,48.85127]],[[2.3782,48.88737],[2.37148,48.88403],[2.3709,48.88453],[2.37824,48.88818],[2.37944,48.8883],[2.3782,48.88737]],[[2.28787,48.85585],[2.28741,48.85562],[2.28642,48.85621],[2.28911,48.85838],[2.29016,48.8578],[2.28827,48.85487],[2.2876,48.85543],[2.28787,48.85585]],[[2.36321,48.84603],[2.36039,48.84812],[2.36169,48.84898],[2.36474,48.84693],[2.36321,48.84603]],[[2.36989,48.85461],[2.36879,48.85199],[2.36856,48.85203],[2.3723,48.86042],[2.37241,48.86161],[2.37203,48.86253],[2.36734,48.86849],[2.36722,48.86897],[2.3722,48.86263],[2.37262,48.86168],[2.37252,48.8604],[2.36989,48.85461]],[[2.27906,48.84835],[2.27719,48.84949],[2.27864,48.85053],[2.28051,48.84937],[2.27906,48.84835]],[[2.369,48.85185],[2.36796,48.85073],[2.36692,48.8472],[2.36634,48.84711],[2.366,48.84736],[2.36812,48.85203],[2.369,48.85185]],[[2.39697,48.89587],[2.39489,48.89568],[2.39319,48.89513],[2.38667,48.8919],[2.38722,48.89245],[2.39354,48.89569],[2.39369,48.89549],[2.39647,48.89621],[2.39697,48.89587]],[[2.3376,48.85836],[2.33796,48.85906],[2.33972,48.85877],[2.33938,48.8578],[2.33878,48.85733],[2.33734,48.85786],[2.3376,48.85836]],[[2.35331,48.85249],[2.35384,48.85164],[2.35268,48.85165],[2.35208,48.85367],[2.35136,48.85455],[2.35295,48.85368],[2.35331,48.85249]],[[2.38471,48.89117],[2.38639,48.89166],[2.37973,48.88836],[2.37932,48.88841],[2.38471,48.89117]],[[2.35223,48.85507],[2.35382,48.85443],[2.35295,48.85368],[2.35136,48.85455],[2.35201,48.85525],[2.35223,48.85507]],[[2.35981,48.8485],[2.35938,48.84877],[2.36039,48.84949],[2.36169,48.84898],[2.36039,48.84812],[2.35981,48.8485]],[[2.36545,48.84681],[2.36541,48.84647],[2.36386,48.84555],[2.36321,48.84603],[2.36474,48.84693],[2.36545,48.84681]],[[2.45015,48.81925],[2.44885,48.8197],[2.44723,48.81975],[2.4477,48.82009],[2.44961,48.82011],[2.45049,48.81959],[2.4505,48.81931],[2.45015,48.81925]],[[2.385,48.89389],[2.38292,48.89705],[2.38341,48.89718],[2.38404,48.89583],[2.38547,48.894],[2.385,48.89389]],[[2.38636,48.89261],[2.38722,48.89245],[2.38646,48.89166],[2.38535,48.89149],[2.38574,48.89257],[2.38636,48.89261]],[[2.36299,48.87435],[2.36317,48.87492],[2.3649,48.87693],[2.36528,48.87688],[2.36347,48.87477],[2.36338,48.87391],[2.36307,48.87399],[2.36299,48.87435]],[[2.3805,48.90102],[2.38087,48.90112],[2.38231,48.89876],[2.38197,48.89876],[2.3805,48.90102]],[[2.36654,48.86984],[2.36631,48.8698],[2.36383,48.87317],[2.36424,48.87299],[2.36654,48.86984]],[[2.36966,48.88228],[2.37045,48.88306],[2.36658,48.8784],[2.36626,48.87834],[2.36966,48.88228]],[[2.35312,48.85101],[2.35242,48.85119],[2.35261,48.8516],[2.354,48.85155],[2.35353,48.85088],[2.35312,48.85101]],[[2.37973,48.90114],[2.37527,48.90197],[2.37648,48.90199],[2.38024,48.90111],[2.37973,48.90114]],[[2.38335,48.89728],[2.38286,48.89715],[2.38197,48.89876],[2.38231,48.89876],[2.38335,48.89728]],[[2.38574,48.89257],[2.38522,48.89341],[2.38575,48.89307],[2.38589,48.89333],[2.38631,48.89266],[2.38574,48.89257]],[[2.38723,48.89066],[2.38797,48.88963],[2.38777,48.88957],[2.38646,48.89166],[2.38723,48.89066]],[[2.38024,48.90143],[2.37984,48.90206],[2.38028,48.90207],[2.38062,48.90153],[2.38024,48.90143]],[[2.3804,48.90107],[2.38016,48.90126],[2.38062,48.90153],[2.38087,48.90112],[2.3804,48.90107]],[[2.37104,48.88411],[2.3709,48.88453],[2.37148,48.88403],[2.37104,48.88411]],[[2.36564,48.87746],[2.36528,48.87688],[2.36508,48.87696],[2.36576,48.87761],[2.36564,48.87746]],[[2.38292,48.89705],[2.38078,48.897],[2.38292,48.89705]]]};
 const POIS = [{"n": "Tour Eiffel", "lng": 2.2945, "lat": 48.8584, "c": "mon"}, {"n": "Arc de Triomphe", "lng": 2.295, "lat": 48.8738, "c": "mon"}, {"n": "Notre-Dame", "lng": 2.3499, "lat": 48.853, "c": "mon"}, {"n": "Sacré-Cœur", "lng": 2.3431, "lat": 48.8867, "c": "mon"}, {"n": "Panthéon", "lng": 2.3464, "lat": 48.8462, "c": "mon"}, {"n": "Louvre", "lng": 2.3376, "lat": 48.8606, "c": "mon"}, {"n": "Opéra", "lng": 2.3316, "lat": 48.8719, "c": "mon"}, {"n": "Orsay", "lng": 2.3266, "lat": 48.86, "c": "mon"}, {"n": "Pompidou", "lng": 2.3522, "lat": 48.8607, "c": "mon"}, {"n": "Grand Palais", "lng": 2.3125, "lat": 48.8661, "c": "mon"}, {"n": "Gare du Nord", "lng": 2.3553, "lat": 48.8809, "c": "gare"}, {"n": "Gare de l'Est", "lng": 2.3591, "lat": 48.8768, "c": "gare"}, {"n": "Saint-Lazare", "lng": 2.3253, "lat": 48.8757, "c": "gare"}, {"n": "Gare de Lyon", "lng": 2.3743, "lat": 48.8443, "c": "gare"}, {"n": "Montparnasse", "lng": 2.3197, "lat": 48.8404, "c": "gare"}, {"n": "Austerlitz", "lng": 2.366, "lat": 48.8422, "c": "gare"}, {"n": "Gare de Bercy", "lng": 2.382, "lat": 48.839, "c": "gare"}, {"n": "Bois de Boulogne", "lng": 2.249, "lat": 48.862, "c": "parc"}, {"n": "Bois de Vincennes", "lng": 2.4342, "lat": 48.8283, "c": "parc"}, {"n": "Luxembourg", "lng": 2.3372, "lat": 48.8462, "c": "parc"}, {"n": "Tuileries", "lng": 2.3265, "lat": 48.8635, "c": "parc"}, {"n": "Champ de Mars", "lng": 2.2986, "lat": 48.8556, "c": "parc"}, {"n": "Buttes-Chaumont", "lng": 2.3822, "lat": 48.8809, "c": "parc"}, {"n": "Montsouris", "lng": 2.338, "lat": 48.822, "c": "parc"}, {"n": "La Villette", "lng": 2.393, "lat": 48.8938, "c": "parc"}];
-const ALL_CORR_OPTIONS = ["1","2","3","3bis","4","5","6","7","7bis","8","9","10","11","12","13","14",
-  "RER A","RER B","RER C","RER D","RER E","T1","T2","T3a","T3b","T6","T7","T8"];
-
 // ---------- Forked-line helpers (line 13: trunk + two northern branches) ----------
 // LINES[key].stations is a getter for such lines: trunk + whichever branch is
 // currently trained (they always cover trunk + every branch). That covers almost every call site in the
@@ -914,22 +895,6 @@ function lineAllStations(lineKey){
     L.branches[bk].stations.forEach(s=>{ if(!seen.has(s.n)){ seen.add(s.n); out.push(s); } });
   });
   return out;
-}
-// which branch (if any) a given station name belongs to on a forked line
-function branchKeyOfStation(lineKey, name){
-  const L = LINES[lineKey];
-  if(!L.branches) return null;
-  for(const bk in L.branches){ if(L.branches[bk].stations.some(s=>s.n===name)) return bk; }
-  return null; // lives on the trunk
-}
-// trunk + whichever branch actually contains this station (used by the review
-// mini-strip, which must render the right branch for a due station regardless
-// of which branch happens to be selected in the training tab right now)
-function contextStationsForName(lineKey, name){
-  const L = LINES[lineKey];
-  if(!L.branches) return L.stations;
-  const bk = branchKeyOfStation(lineKey, name) || Object.keys(L.branches)[0];
-  return L.trunk.concat(L.branches[bk].stations);
 }
 
 // Official IDFM / RATP line colours (metro + RER reliable; tram shades are best-effort)
@@ -1183,16 +1148,12 @@ let state = {
   mode: "ordre", // ordre | melange
   phase: "stations", // stations | corr | finished
   idx: 0,            // current index for ordre mode
-  results: [],        // per-station: {stationCorrect, corrCorrect}
+  results: [],        // per-station: {stationCorrect}
   bank: [],           // for melange mode: shuffled remaining names
   placed: {},          // melange: index -> name placed correctly
   named: {},           // nomme: index -> true once correctly named/revealed
   activeIdx: null,     // nomme: which "?" dot is currently being answered
   selectedChip: null,
-  pendingCorr: null,   // index of station currently being asked about correspondences
-  corrSelection: [],
-  corrChecked: false,
-  corrMode: "ask",     // "ask" (demander) | "hint" (afficher en indice) | "off"
   bankFilter: "",      // place mode: text filter for the station bank
   inPlay: null,        // Set of station indices counted this training session
   gameLogged: false,   // whether the current finished training game has been logged
@@ -1208,7 +1169,7 @@ let state = {
 function normalize(str){
   return str.toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
-    .replace(/[-‐‑‒–—―'’]/g," ")
+    .replace(/[-‐‑‒–—―'’.]/g," ")
     .replace(/\s+/g," ")
     .trim();
 }
@@ -1234,14 +1195,29 @@ function levenshtein(a, b){
   return prev[n];
 }
 
-// fuzzy match: tolerates ~15% of the station-name length in edits (accents/hyphens already neutralised)
-function matchesStation(guess, target){
-  const g = normalize(guess), t = normalize(target);
+// fuzzy match: tolerates ~15% of the string length in edits (accents/hyphens/periods already neutralised)
+function fuzzyEq(g, t){
   if(g.length===0) return false;
   if(g===t) return true;
   const allowed = Math.round(t.length * 0.15);
   if(allowed<1) return false;
   return levenshtein(g, t) <= allowed;
+}
+// "A - B" names at/above this length (raw, incl. spaces) also accept just "A" —
+// below it, the full name is short enough that typing it in full isn't a burden.
+const LONG_COMPOUND_MIN = 25;
+function matchesStation(guess, target){
+  const g = normalize(guess);
+  if(fuzzyEq(g, normalize(target))) return true;
+  const sep = target.indexOf(" - "); // detected on the raw name: normalize() turns " - " into a single space
+  if(sep >= 0 && target.length >= LONG_COMPOUND_MIN && fuzzyEq(g, normalize(target.slice(0, sep)))) return true;
+  return false;
+}
+
+// "Indice" button text: first letter + a fixed, length-independent placeholder —
+// never reveals how long the actual name is, just confirms its first letter.
+function hintFor(name){
+  return name.charAt(0) + " — —";
 }
 
 function shuffle(arr){
@@ -1258,14 +1234,11 @@ function resetLine(){
   state.phase = "stations";
   state.idx = 0;
   state.gameLogged = false;
-  state.results = L.stations.map(()=>({stationCorrect:null, corrCorrect:null, wrongAttempts:0, revealed:false}));
+  state.results = L.stations.map(()=>({stationCorrect:null, wrongAttempts:0, revealed:false, hintUsed:false}));
   state.placed = {};
   state.named = {};
   state.activeIdx = null;
   state.selectedChip = null;
-  state.pendingCorr = null;
-  state.corrSelection = [];
-  state.corrChecked = false;
   state.bankFilter = "";
   state.feedback = null;
   state.inPlay = new Set(L.stations.map((s,i)=>i));
@@ -1292,16 +1265,6 @@ function setMode(m){
   resetLine();
   render();
 }
-function setCorrMode(m){
-  state.corrMode = m;
-  // leaving "ask" mid-question: clear any pending correspondence prompt
-  if(m !== "ask" && state.pendingCorr !== null){
-    state.pendingCorr = null;
-    if(state.mode === "melange") maybeFinishMelange();
-  }
-  render();
-}
-
 /* ---------- View navigation ---------- */
 function goView(v){
   state.view = v;
@@ -1314,7 +1277,7 @@ function startReview(channel){
   channel = channel || (dueStations('name').length ? 'name' : (dueStations('map').length ? 'map' : 'name'));
   const queue = shuffle(dueStations(channel));
   state.rev = {
-    channel, queue, pos: 0, results: [], wrong: 0,
+    channel, queue, pos: 0, results: [], wrong: 0, hintUsed: false,
     phase: queue.length ? "card" : "empty",
     click: null, answered: false
   };
@@ -1330,6 +1293,15 @@ function reviewInput(){
   const inp = document.getElementById("revInput"); if(!inp) return;
   if(normalize(inp.value).length < normalize(c.name).length) return;
   if(matchesStation(inp.value, c.name)) reviewAccept();
+}
+function reviewHint(){
+  const c = reviewCurrent(); if(!c) return;
+  const r = state.rev;
+  if(!r.hintUsed){ r.hintUsed = true; r.wrong++; }
+  const fb = document.getElementById("revFb");
+  if(fb){ fb.textContent = `Indice : ${hintFor(c.name)}`; fb.className = "feedback hint"; }
+  const inp = document.getElementById("revInput");
+  if(inp) inp.focus();
 }
 function reviewSubmit(){
   const c = reviewCurrent(); if(!c) return;
@@ -1395,6 +1367,7 @@ function reviewAdvance(){
   r._resolving = false;
   r.pos++;
   r.wrong = 0;
+  r.hintUsed = false;
   if(r.pos >= r.queue.length){
     const total = r.results.length;
     const isMap = r.channel==='map';
@@ -1403,22 +1376,12 @@ function reviewAdvance(){
     const revealed = isMap ? r.results.filter(x=>x.dist>=99999).length : r.results.filter(x=>x.revealed).length;
     const totalWrong = isMap ? r.results.filter(x=>x.dist>=500).length : r.results.reduce((a,x)=>a+x.wrong,0);
     const pct = total ? Math.round(100*(firstTry+0.5*withErrors)/total) : 0;
-    logGame({ts:Date.now(), kind:"review", line:"—", mode:(isMap?"révision carte":"révision"), corrMode:"off",
-      total, firstTry, withErrors, revealed, totalWrong, pct, corrOk:0, corrTotal:0});
+    logGame({ts:Date.now(), kind:"review", line:"—", mode:(isMap?"révision carte":"révision"),
+      total, firstTry, withErrors, revealed, totalWrong, pct});
     r.phase = "done";
     r.summary = {total, firstTry, withErrors, revealed, totalWrong, pct, isMap};
   }
   render();
-}
-
-function renderOpts(){
-  const row = document.getElementById("optsRow");
-  const opts = [["ask","Demander"],["hint","Indices"],["off","Aucune"]];
-  row.innerHTML = `
-    <span class="opts-label">Correspondances</span>
-    <div class="seg">` +
-    opts.map(([k,l])=>`<button class="${state.corrMode===k?'active':''}" onclick="setCorrMode('${k}')">${l}</button>`).join("") +
-    `</div>`;
 }
 
 // display order for the line-selector badges: bis lines sit right after their
@@ -1482,11 +1445,7 @@ function computeScore(){
   // points: first try = 1, recovered after error(s) = 0.5, revealed = 0
   const points = firstTry + 0.5*withErrors;
   const pct = total ? Math.round(100*points/total) : 0;
-  // correspondences (ask mode only), restricted to in-play stations
-  const corrTotal = idxs.filter(i=>L.stations[i].c.length>0).length;
-  const corrOk = idxs.filter(i=>state.results[i].corrCorrect===true).length;
-  const corrAttempted = idxs.filter(i=>state.results[i].corrCorrect!==null).length;
-  return {total, firstTry, withErrors, revealed, totalWrong, done, pct, corrTotal, corrOk, corrAttempted};
+  return {total, firstTry, withErrors, revealed, totalWrong, done, pct};
 }
 
 function renderNav(){
@@ -1510,8 +1469,7 @@ function renderScore(){
   bar.innerHTML =
     `<span>Du premier coup <b>${s.firstTry}/${s.total}</b></span>` +
     `<span>Essais ratés <b>${s.totalWrong}</b></span>` +
-    `<span>Score <b>${s.pct}%</b></span>` +
-    ((state.corrMode==="ask") ? `<span>Correspondances <b>${s.corrOk}/${s.corrAttempted||0}</b></span>` : ``);
+    `<span>Score <b>${s.pct}%</b></span>`;
 }
 
 function corrChipsHtml(corrArr, small){
@@ -1606,21 +1564,21 @@ function buildLoopGeo(L){
 function traceStopHtml(st, slotMode){
   const L = LINES[state.lineKey];
   const s = st.station, idx = st.idx;
-  const suppressCorrIdx = (state.pendingCorr !== null && !state.corrChecked) ? state.pendingCorr : -1;
   const isHub = s.c.length>0;
-  const known = state.view==="solutions" || (slotMode ? !!state.placed[idx] : !!state.named[idx]);
-  const isActive = state.view!=="solutions" && !slotMode && state.activeIdx === idx;
+  const isReview = state.view==="review";
+  const known = state.view==="solutions" || (isReview ? idx !== state.reviewTargetIdx : (slotMode ? !!state.placed[idx] : !!state.named[idx]));
+  const isActive = state.view!=="solutions" && !isReview && !slotMode && state.activeIdx === idx;
   let cls = "fstop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"")
           + (st.isTerminus?" terminus":"") + (st.lane==='bottom'?" below":"");
   if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
-  const clickable = !known && (slotMode || state.pendingCorr===null);
+  const clickable = !known && !isReview;
   if(clickable) cls += " slot";
   if(state.flashWrong===idx) cls += " wrong-flash";
   const dotStyle = known
     ? (isHub ? `background:#fff;border-color:#14140f` : `background:${L.color};border-color:${L.color}`)
     : "";
   const label = known ? s.n : (isActive ? "…" : "?");
-  const showChips = isHub && idx !== suppressCorrIdx && (known || state.corrMode === "hint");
+  const showChips = isHub;
   const onclick = clickable ? (slotMode ? `onclick="onSlotClick(${idx})"` : `onclick="onDotClick(${idx})"`) : "";
   return `<div class="${cls}" data-idx="${idx}" style="left:${_f(st.x)}px;top:${_f(st.y)}px" ${onclick}>
       ${showChips ? corrChipsHtml(s.c, true) : ''}
@@ -1736,25 +1694,24 @@ function panelHeadHtml(lineKey){
 
 function renderStrip(slotMode){
   const L = LINES[state.lineKey];
-  // suppress chips for the station whose correspondences are being asked & not yet checked
-  const suppressCorrIdx = (state.pendingCorr !== null && !state.corrChecked) ? state.pendingCorr : -1;
   let html = `<div class="strip-scroll"><div class="strip">
     <div class="spine" style="background:${L.color}"></div>`;
+  const isReview = state.view==="review";
   L.stations.forEach((s,i)=>{
     const isHub = s.c.length>0;
-    const known = state.view==="solutions" || (slotMode ? !!state.placed[i] : !!state.named[i]);
-    const isActive = state.view!=="solutions" && !slotMode && state.activeIdx === i;
+    const known = state.view==="solutions" || (isReview ? i !== state.reviewTargetIdx : (slotMode ? !!state.placed[i] : !!state.named[i]));
+    const isActive = state.view!=="solutions" && !isReview && !slotMode && state.activeIdx === i;
     const isTerminus = (i===0 || i===L.stations.length-1);
     let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"");
     if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
-    const clickable = !known && (slotMode || state.pendingCorr===null);
+    const clickable = !known && !isReview;
     if(clickable) cls += " slot";
     if(state.flashWrong===i) cls += " wrong-flash";
     const dotStyle = known
       ? (isHub ? `style="background:#fff;border-color:#14140f"` : `style="background:${L.color};border-color:${L.color}"`)
       : "";
     const label = known ? s.n : (isActive ? "…" : "?");
-    const showChips = isHub && i !== suppressCorrIdx && (known || state.corrMode === "hint");
+    const showChips = isHub;
     const onclick = clickable
       ? (slotMode ? `onclick="onSlotClick(${i})"` : `onclick="onDotClick(${i})"`)
       : "";
@@ -1809,7 +1766,6 @@ function render(){
     chrome.style.display = "";
     renderTabs();
     document.getElementById("modes").style.display = "none";
-    document.getElementById("optsRow").style.display = "none";
     document.getElementById("reviewBanner").innerHTML = "";
     document.getElementById("scorebar").innerHTML = "";
     renderSolutions(panel, note);
@@ -1820,9 +1776,7 @@ function render(){
   chrome.style.display = "";
   renderTabs();
   renderModes();
-  renderOpts();
   document.getElementById("modes").style.display = "";
-  document.getElementById("optsRow").style.display = (state.mode==="carte") ? "none" : "";
   document.getElementById("reviewBanner").innerHTML = "";
   if(state.mode === "carte"){ document.getElementById("scorebar").innerHTML = ""; renderCarte(panel, note); return; }
   renderScore();
@@ -1832,8 +1786,8 @@ function render(){
     const s = computeScore();
     if(!state.gameLogged){
       logGame({ts:Date.now(), kind:"train", line:state.lineKey, mode:(state.mode==="ordre"?"je nomme":"je place"),
-        corrMode:state.corrMode, total:s.total, firstTry:s.firstTry, withErrors:s.withErrors, revealed:s.revealed,
-        totalWrong:s.totalWrong, pct:s.pct, corrOk:s.corrOk, corrTotal:s.corrTotal});
+        total:s.total, firstTry:s.firstTry, withErrors:s.withErrors, revealed:s.revealed,
+        totalWrong:s.totalWrong, pct:s.pct});
       state.gameLogged = true;
     }
     const row = (label, val) => `<div style="display:flex;justify-content:space-between;max-width:320px;margin:0 auto;padding:5px 0;border-bottom:1px solid #e4e0d3;font-size:14px"><span style="color:var(--muted)">${label}</span><b>${val}</b></div>`;
@@ -1847,7 +1801,6 @@ function render(){
           ${row("Après une ou plusieurs erreurs", s.withErrors)}
           ${state.mode==="ordre" ? row("Révélées (Je ne sais pas)", s.revealed) : ``}
           ${row("Total d'essais ratés", s.totalWrong)}
-          ${(state.corrMode==="ask") ? row("Correspondances exactes", `${s.corrOk} / ${s.corrTotal}`) : ``}
           ${row("Stations à réviser sur cette ligne", scheduledStations(state.lineKey,'name').length)}
         </div>
         <button class="btn btn-primary" style="margin-top:18px" onclick="resetLine();render()">Recommencer cette ligne</button>
@@ -1902,6 +1855,37 @@ function layoutPoiLabels(pois){
   });
 }
 
+// per-line station arrays for the map hint layer: forked lines draw as two
+// trunk+branch segments, loop lines as two trunk+arc segments (same split used
+// elsewhere for the SVG trace) — a plain line is just its full station list.
+function lineMapSegments(lk){
+  const L = LINES[lk];
+  if(L.branches) return Object.keys(L.branches).map(bk => L.trunk.concat(L.branches[bk].stations));
+  if(L.loop) return [ L.westTrunk.concat(L.loopSouth, L.eastTrunk),
+      [L.westTrunk[L.westTrunk.length-1]].concat(L.loopNorth, L.eastTrunk[0]) ];
+  return [lineAllStations(lk)];
+}
+// edges (pairs of consecutive stations) served by 2+ different lines — real shared
+// trackage, e.g. lines 8/9 run side by side for several stops around République.
+// Drawn as parallel offset strokes (see MAP_EDGE_GAP) so neither colour occludes
+// the other; computed once since LINES/GEO are static.
+const MAP_SHARED_EDGES = (function(){
+  const m = new Map(); // "StationA|StationB" (sorted) -> [lineKey,...] in LINE_ORDER
+  LINE_ORDER.forEach(lk=>{
+    lineMapSegments(lk).forEach(seg=>{
+      for(let i=0;i<seg.length-1;i++){
+        const a=seg[i].n, b=seg[i+1].n;
+        if(!GEO.stations[a] || !GEO.stations[b]) continue;
+        const key = a<b ? a+'|'+b : b+'|'+a;
+        if(!m.has(key)) m.set(key, []);
+        m.get(key).push(lk);
+      }
+    });
+  });
+  return m;
+})();
+const MAP_EDGE_GAP = 4; // px between parallel strokes at a shared edge
+
 function buildMapSvg(opts){
   opts = opts || {};
   const W=MAP.W, H=MAP.H;
@@ -1922,34 +1906,48 @@ function buildMapSvg(opts){
     const label = it.skip ? '' : `<text x="${it.tx.toFixed(1)}" y="${it.ty.toFixed(1)}" font-size="10" text-anchor="${it.anchor}" fill="${col}">${it.p.n}</text>`;
     return `<g>${mark}${label}</g>`;
   }).join('') + `</g>`;
-  // optional hint layer: ALL lines' routes (colour or neutral grey) and/or station dot
-  // markers, drawn independently so either can be toggled on its own, non-interactive
+  // optional hint layer: ALL lines' routes (true colour or neutral grey) and/or
+  // station dot markers, drawn independently so either can be toggled on its own,
+  // non-interactive. Routes are drawn edge-by-edge (not one path per line) so a
+  // shared edge (see MAP_SHARED_EDGES) can be offset into parallel strokes — full
+  // opacity in "colour" mode, since a washed-out stroke was the actual complaint.
   const NEUTRAL_LINE = "#8a8578";
   const lineStyle = opts.lineStyle || "none";
-  if(lineStyle !== "none" || opts.showStops){
-    s += `<g style="pointer-events:none">`;
-    Object.keys(LINES).forEach(lk=>{
+  if(lineStyle !== "none"){
+    const strokeOp = lineStyle === "color" ? 1 : 0.3;
+    s += `<g style="pointer-events:none">` + LINE_ORDER.map(lk=>{
       const L=LINES[lk];
       const strokeCol = lineStyle === "color" ? L.color : NEUTRAL_LINE;
-      const dotCol = lineStyle === "color" ? L.color : NEUTRAL_LINE;
-      // forked lines (e.g. line 13) draw as two segments (trunk+branchA, trunk+branchB)
-      // rather than one continuous line, since the branches physically diverge.
-      const segments = L.branches
-        ? Object.keys(L.branches).map(bk => L.trunk.concat(L.branches[bk].stations))
-        : L.loop
-          ? [ L.westTrunk.concat(L.loopSouth, L.eastTrunk),
-              [L.westTrunk[L.westTrunk.length-1]].concat(L.loopNorth, L.eastTrunk[0]) ]
-          : [lineAllStations(lk)];
-      segments.forEach(segStations=>{
-        const pts=segStations.map(st=>GEO.stations[st.n]).filter(Boolean);
-        if(lineStyle !== "none" && pts.length>1){
-          const dpath=pts.map((p,i)=>{ const [x,y]=MAP.project(p[0],p[1]); return (i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1); }).join('');
-          s += `<path d="${dpath}" fill="none" stroke="${strokeCol}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" opacity="0.3"/>`;
+      return lineMapSegments(lk).map(segStations=>{
+        let seg = "";
+        for(let i=0;i<segStations.length-1;i++){
+          const a=segStations[i].n, b=segStations[i+1].n;
+          const pa=GEO.stations[a], pb=GEO.stations[b];
+          if(!pa || !pb) continue;
+          const [x0,y0]=MAP.project(pa[0],pa[1]), [x1,y1]=MAP.project(pb[0],pb[1]);
+          const sharers = MAP_SHARED_EDGES.get(a<b ? a+'|'+b : b+'|'+a) || [lk];
+          let ox=0, oy=0;
+          if(sharers.length>1){
+            const dx=x1-x0, dy=y1-y0, len=Math.hypot(dx,dy)||1;
+            const off=(sharers.indexOf(lk)-(sharers.length-1)/2)*MAP_EDGE_GAP;
+            ox=-dy/len*off; oy=dx/len*off;
+          }
+          seg += `<line x1="${(x0+ox).toFixed(1)}" y1="${(y0+oy).toFixed(1)}" x2="${(x1+ox).toFixed(1)}" y2="${(y1+oy).toFixed(1)}" stroke="${strokeCol}" stroke-width="3" stroke-linecap="round" opacity="${strokeOp}"/>`;
         }
-        if(opts.showStops) pts.forEach(p=>{ const [x,y]=MAP.project(p[0],p[1]); s+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="${dotCol}" opacity="0.75"/>`; });
-      });
-    });
-    s += `</g>`;
+        return seg;
+      }).join('');
+    }).join('') + `</g>`;
+  }
+  // station dots: one per real station regardless of how many lines serve it (a
+  // per-line coloured dot would just show whichever line drew last) — neutral
+  // black is the only choice that stays meaningful at interchanges.
+  if(opts.showStops){
+    const used = new Set();
+    LINE_ORDER.forEach(lk=> lineMapSegments(lk).forEach(seg=> seg.forEach(st=>{ if(GEO.stations[st.n]) used.add(st.n); })));
+    s += `<g style="pointer-events:none">` + [...used].map(name=>{
+      const [x,y]=MAP.project(GEO.stations[name][0], GEO.stations[name][1]);
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="#14140f"/>`;
+    }).join('') + `</g>`;
   }
   // answer overlay (after a click), non-interactive
   if(opts.answer){
@@ -2102,9 +2100,9 @@ function carteNext(){
     const valid=r.filter(x=>x.dist<99999);
     const avg=valid.length?Math.round(valid.reduce((a,x)=>a+x.dist,0)/valid.length):0;
     const pct=r.length?Math.round(100*(exc+0.5*bien)/r.length):0;
-    logGame({ts:Date.now(), kind:"carte", line:state.lineKey, mode:"carte", corrMode:"off",
+    logGame({ts:Date.now(), kind:"carte", line:state.lineKey, mode:"carte",
       total:r.length, firstTry:exc, withErrors:bien, revealed:r.filter(x=>x.dist>=99999).length,
-      totalWrong:r.filter(x=>x.dist>=500).length, pct, corrOk:0, corrTotal:0, avgDist:avg});
+      totalWrong:r.filter(x=>x.dist>=500).length, pct, avgDist:avg});
   }
   render();
 }
@@ -2116,29 +2114,19 @@ function lineBadge(line){
   const fg = L ? ((line==='1')?'#14140f':'#fff') : '#fff';
   return `<span class="line-badge" style="background:${bg};color:${fg}">${escapeHtml(line)}</span>`;
 }
-function renderReviewMiniStrip(line, targetName){
-  const L = LINES[line];
-  const stations = contextStationsForName(line, targetName);
-  let html = `<div class="strip-scroll"><div class="strip">
-    <div class="spine" style="background:${L.color}"></div>`;
-  stations.forEach((s,i)=>{
-    const isHub = s.c.length>0;
-    const isTarget = s.n === targetName;
-    const known = !isTarget;
-    const isTerminus = (i===0 || i===stations.length-1);
-    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isTarget?" current":"") + (isTerminus?" terminus":"");
-    const dotStyle = known
-      ? (isHub ? `style="background:#fff;border-color:#14140f"` : `style="background:${L.color};border-color:${L.color}"`)
-      : "";
-    const label = known ? s.n : "?";
-    const showChips = isHub && known;  // hide the target's own chips
-    html += `<div class="${cls}">
-        ${showChips ? corrChipsHtml(s.c, true) : ''}
-        <div class="dot" ${dotStyle}></div>
-        <div class="label">${label}</div>
-      </div>`;
-  });
-  html += `</div></div>`;
+// review name-card: full line diagram via the shared SVG trace engine (renderLineStrip),
+// so forks/loops (7/13/10/7bis) display correctly instead of the old flat, branch-blind
+// strip. Exactly one station (the one being asked about) stays hidden as "?"; every
+// other stop is revealed and nothing is clickable. state.lineKey is swapped to the
+// card's line for the duration of the call (every renderer in this file reads "the
+// current line" from there) and restored immediately after, since review can be
+// entered mid-training on a different line and must not disturb it.
+function renderReviewStrip(line, targetName){
+  const savedLineKey = state.lineKey;
+  state.lineKey = line;
+  state.reviewTargetIdx = lineAllStations(line).findIndex(s => s.n === targetName);
+  const html = fitWrap(renderLineStrip(false));
+  state.lineKey = savedLineKey;
   return html;
 }
 function reviewChannelBar(){
@@ -2230,16 +2218,18 @@ function renderReview(panel, note){
       <span style="font-weight:800;text-transform:uppercase;font-size:12px;letter-spacing:0.05em">${LINES[c.line].name}</span>
       <span style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:700">Carte ${r.pos+1} / ${total}</span>
     </div>
-    ${renderReviewMiniStrip(c.line, c.name)}
+    ${renderReviewStrip(c.line, c.name)}
     <div class="qcard">
       <div class="qlabel">Quelle est la station « ? » surlignée ?</div>
       <input type="text" id="revInput" placeholder="Tape le nom de la station" autocomplete="off" autocapitalize="off">
       <div class="row-btn">
         <button class="btn btn-primary" onclick="reviewSubmit()">Valider</button>
+        <button class="btn btn-secondary" onclick="reviewHint()">Indice</button>
         <button class="btn btn-secondary" onclick="reviewSkip()">Je ne sais pas</button>
       </div>
       <div id="revFb" class="feedback"></div>
     </div>`;
+  fitFinishedStrip();
   note.textContent = "Validation automatique dès que c'est bon ; fautes de frappe tolérées.";
   const inp = document.getElementById("revInput");
   inp.focus();
@@ -2379,11 +2369,6 @@ function renderStats(panel, note){
 function renderOrdre(panel, note){
   const L = LINES[state.lineKey];
 
-  if(state.pendingCorr !== null){
-    renderCorrQuestion(panel, note, state.pendingCorr, advanceAfterCorr);
-    return;
-  }
-
   const namedCount = Object.keys(state.named).length;
   if(namedCount >= L.stations.length){
     state.phase = "finished";
@@ -2402,6 +2387,7 @@ function renderOrdre(panel, note){
          <input type="text" id="answerInput" placeholder="Tape le nom de la station" autocomplete="off" autocapitalize="off">
          <div class="row-btn">
            <button class="btn btn-primary" onclick="submitOrdre()">Valider</button>
+           <button class="btn btn-secondary" onclick="hintOrdre()">Indice</button>
            <button class="btn btn-secondary" onclick="skipOrdre()">Je ne sais pas</button>
          </div>
          <div id="fb" class="feedback"></div>
@@ -2470,6 +2456,19 @@ function submitOrdre(){
   }
 }
 
+function hintOrdre(){
+  const L = LINES[state.lineKey];
+  const idx = state.activeIdx;
+  if(idx === null || state.named[idx]) return;
+  const r = state.results[idx];
+  if(!r.hintUsed){ r.hintUsed = true; r.wrongAttempts++; renderScore(); }
+  const fb = document.getElementById("fb");
+  fb.textContent = `Indice : ${hintFor(L.stations[idx].n)}`;
+  fb.className = "feedback hint";
+  const inp = document.getElementById("answerInput");
+  if(inp) inp.focus();
+}
+
 function skipOrdre(){
   const L = LINES[state.lineKey];
   const idx = state.activeIdx;
@@ -2484,112 +2483,15 @@ function skipOrdre(){
 }
 
 function finishNaming(idx, wasCorrect){
-  const L = LINES[state.lineKey];
   state.activeIdx = null;
   recordStation(idx);
-  if((state.corrMode==="ask") && L.stations[idx].c.length>0){
-    state.pendingCorr = idx;
-    state.corrSelection = [];
-    state.corrChecked = false;
-  }
   render();
-}
-
-function advanceAfterCorr(){
-  state.pendingCorr = null;
-  render();
-}
-
-function renderCorrQuestion(panel, note, idx, onContinue){
-  const L = LINES[state.lineKey];
-  const station = L.stations[idx];
-  const stripHtml = renderLineStrip(state.mode==="melange");
-
-  panel.innerHTML = `
-    <div class="panel-head">
-      <div class="terminus">${station.n}</div>
-      <div class="arrow">correspondance(s) ?</div>
-      <div></div>
-    </div>
-    ${fitWrap(stripHtml)}
-    <div class="qcard">
-      <div class="qlabel">Quelles lignes / RER / tram sont en correspondance ici ? (plusieurs choix possibles)</div>
-      <div class="corr-options" id="corrOptions"></div>
-      <div class="row-btn">
-        <button class="btn btn-primary" id="corrValidateBtn" onclick="validateCorr(${idx})">Valider</button>
-        <button class="btn btn-secondary" id="corrNextBtn" style="display:none" onclick="window.__corrContinue()">Continuer →</button>
-      </div>
-      <div id="fbCorr" class="feedback"></div>
-    </div>
-  `;
-  fitFinishedStrip();
-  window.__corrContinue = onContinue;
-  note.textContent = "";
-
-  const opts = ALL_CORR_OPTIONS.filter(o => o !== state.lineKey);
-  const box = document.getElementById("corrOptions");
-  box.innerHTML = opts.map(o=>{
-    const sel = state.corrSelection.includes(o);
-    return `<button type="button" class="corr-opt${sel?' selected':''}" data-opt="${o}" onclick="toggleCorrOpt('${o}')"><span class="corr-swatch" style="background:${corrColor(o)}"></span>${o}</button>`;
-  }).join("");
-}
-
-function toggleCorrOpt(o){
-  if(state.corrChecked) return;
-  const i = state.corrSelection.indexOf(o);
-  if(i>=0) state.corrSelection.splice(i,1);
-  else state.corrSelection.push(o);
-  render();
-}
-
-function validateCorr(idx){
-  if(state.corrChecked) return;
-  const L = LINES[state.lineKey];
-  const correctSet = new Set(L.stations[idx].c);
-  const guessSet = new Set(state.corrSelection);
-  let allCorrect = correctSet.size === guessSet.size;
-  if(allCorrect){
-    for(const c of correctSet){ if(!guessSet.has(c)){ allCorrect = false; break; } }
-  }
-  state.results[idx].corrCorrect = allCorrect;
-  state.corrChecked = true;
-
-  // recolor chips
-  const box = document.getElementById("corrOptions");
-  box.querySelectorAll(".corr-opt").forEach(btn=>{
-    const o = btn.dataset.opt;
-    btn.onclick = null;
-    if(correctSet.has(o) && guessSet.has(o)) btn.className = "corr-opt correct";
-    else if(correctSet.has(o) && !guessSet.has(o)) btn.className = "corr-opt missed";
-    else if(!correctSet.has(o) && guessSet.has(o)) btn.className = "corr-opt extra";
-  });
-
-  document.getElementById("corrValidateBtn").style.display = "none";
-  document.getElementById("corrNextBtn").style.display = "inline-block";
-  const fb = document.getElementById("fbCorr");
-  if(allCorrect){
-    fb.textContent = "✓ Toutes les correspondances sont correctes.";
-    fb.className = "feedback ok";
-  } else {
-    fb.textContent = "✗ Vert = correct, contour pointillé = manqué, barré = en trop.";
-    fb.className = "feedback bad";
-  }
-  renderScore();
 }
 
 // ---- melange mode ----
 
 function renderMelange(panel, note){
   const L = LINES[state.lineKey];
-
-  if(state.pendingCorr !== null){
-    renderCorrQuestion(panel, note, state.pendingCorr, ()=>{
-      state.pendingCorr = null;
-      maybeFinishMelange();
-      render();
-    });
-    return;
-  }
 
   const placedCount = Object.keys(state.placed).length;
   if(placedCount === L.stations.length && state.bank.length===0){
@@ -2651,11 +2553,6 @@ function onSlotClick(idx){
     state.selectedChip = null;
     state.bankFilter = "";
     recordStation(idx);
-    if((state.corrMode==="ask") && L.stations[idx].c.length>0){
-      state.pendingCorr = idx;
-      state.corrSelection = [];
-      state.corrChecked = false;
-    }
     render();
   } else {
     state.flashWrong = idx;
