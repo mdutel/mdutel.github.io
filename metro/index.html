@@ -1013,6 +1013,10 @@ function loadStore(){
       }
       if(!st.name) st.name = {box:0, due:0};
       if(!st.map)  st.map  = {box:0, due:0};
+      // pre-fix data has no per-channel lastSeen (see mergeStore) — approximate
+      // with the station-level lastSeen, same value the old merge logic used.
+      if(st.name.lastSeen === undefined) st.name.lastSeen = st.lastSeen || 0;
+      if(st.map.lastSeen === undefined)  st.map.lastSeen  = st.lastSeen || 0;
     });
   });
   STORE.version = 4;
@@ -1022,8 +1026,8 @@ function saveStore(){
 }
 function getStat(line, name){
   const s = STORE.stats[line] && STORE.stats[line][name];
-  if(s){ if(!s.name) s.name={box:0,due:0}; if(!s.map) s.map={box:0,due:0}; return s; }
-  return {misses:0, attempts:0, lastSeen:0, name:{box:0,due:0}, map:{box:0,due:0}};
+  if(s){ if(!s.name) s.name={box:0,due:0,lastSeen:0}; if(!s.map) s.map={box:0,due:0,lastSeen:0}; return s; }
+  return {misses:0, attempts:0, lastSeen:0, name:{box:0,due:0,lastSeen:0}, map:{box:0,due:0,lastSeen:0}};
 }
 function setStat(line, name, st){
   STORE.stats[line] = STORE.stats[line] || {};
@@ -1069,7 +1073,9 @@ function applyGrade(line, name, grade, ch, missesInc){
   let due = 0;
   if(box > SR_MAXBOX){ box = 0; due = 0; }                // graduated
   else if(box >= 1){ due = nextDue(box); }
-  st[ch] = {box, due};
+  st[ch] = {box, due, lastSeen: Date.now()};              // per-channel lastSeen, so cross-device
+                                                           // merges (see mergeStore) compare name/carte
+                                                           // progress independently instead of station-wide
   st.misses = (st.misses||0) + (missesInc||0);
   st.attempts = (st.attempts||0) + 1;
   st.fails = (st.fails||0) + (grade==='miss' ? 1 : 0);
@@ -1118,16 +1124,31 @@ function importHistory(file){
   };
   reader.readAsText(file);
 }
+// Clés dangereuses en notation crochet sur un objet littéral ({}) : elles
+// n'ajoutent pas une entrée mais modifient/lisent Object.prototype lui-même.
+// Un fichier d'historique importé (arbitraire, potentiellement forgé) ne doit
+// jamais pouvoir écrire dessus — d'où le filtrage avant fusion.
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+function safeKeys(obj) { return Object.keys(obj || {}).filter(k => !UNSAFE_KEYS.has(k)); }
+
 function mergeStore(d){
   STORE.stats = STORE.stats || {}; STORE.games = STORE.games || [];
+  // merge two channel records ({box,due,lastSeen}) using their OWN lastSeen —
+  // not the station-wide one — so training "name" on one device and "carte" on
+  // another doesn't let the wrong channel's data win on import.
   const chMerge=(cur,inc)=>{
     const newer = (inc && inc.lastSeen||0) >= (cur && cur.lastSeen||0);
-    return {box:(newer?inc:cur).box||0, due:(newer?inc:cur).due||0};
+    const w = newer?inc:cur;
+    return {box:w.box||0, due:w.due||0, lastSeen:w.lastSeen||0};
   };
-  const normCh=(st,k)=>{ if(st[k]) return st[k]; if(st.box!==undefined&&k==='name') return {box:st.box||0,due:st.due||0}; return {box:0,due:0}; };
-  Object.keys(d.stats||{}).forEach(line=>{
+  const normCh=(st,k)=>{
+    if(st[k]) return {box:st[k].box||0, due:st[k].due||0, lastSeen: st[k].lastSeen!==undefined ? st[k].lastSeen : (st.lastSeen||0)};
+    if(st.box!==undefined&&k==='name') return {box:st.box||0,due:st.due||0,lastSeen:st.lastSeen||0};
+    return {box:0,due:0,lastSeen:0};
+  };
+  safeKeys(d.stats).forEach(line=>{
     STORE.stats[line] = STORE.stats[line] || {};
-    Object.keys(d.stats[line]).forEach(name=>{
+    safeKeys(d.stats[line]).forEach(name=>{
       const inc = d.stats[line][name];
       const cur = STORE.stats[line][name];
       if(!cur){
@@ -1135,14 +1156,12 @@ function mergeStore(d){
           name:normCh(inc,'name'), map:normCh(inc,'map')};
         return;
       }
-      const cN=normCh(cur,'name'), iN=normCh(inc,'name'), cM=normCh(cur,'map'), iM=normCh(inc,'map');
-      const stampC={lastSeen:cur.lastSeen}, stampI={lastSeen:inc.lastSeen};
       STORE.stats[line][name] = {
         misses:(cur.misses||0)+(inc.misses||0),
         attempts:(cur.attempts||0)+(inc.attempts||0),
         lastSeen:Math.max(cur.lastSeen||0, inc.lastSeen||0),
-        name:chMerge(Object.assign({},cN,stampC), Object.assign({},iN,stampI)),
-        map:chMerge(Object.assign({},cM,stampC), Object.assign({},iM,stampI))
+        name:chMerge(normCh(cur,'name'), normCh(inc,'name')),
+        map:chMerge(normCh(cur,'map'), normCh(inc,'map'))
       };
     });
   });

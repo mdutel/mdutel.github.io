@@ -34,20 +34,12 @@
     box-shadow:0 18px 40px -18px rgba(0,0,0,0.6);
     position:relative; overflow:hidden; transition:transform .12s ease;
   }
-  .card:not(.disabled):hover{ transform:translateY(-3px); }
+  .card:hover{ transform:translateY(-3px); }
   .card .bar{ position:absolute; top:0; left:0; right:0; height:6px; }
   .card .kicker{ font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); font-weight:700; }
   .card h2{ font-size:24px; margin:8px 0 6px; font-weight:800; }
   .card p{ font-size:13px; line-height:1.5; color:#555049; margin:0 0 14px; }
   .card .go{ font-size:13px; font-weight:800; letter-spacing:0.02em; }
-
-  .card.disabled{ opacity:0.62; cursor:default; }
-  .card.disabled .go{ color:var(--muted); }
-  .badge-soon{
-    position:absolute; top:14px; right:14px; background:var(--muted); color:#fff;
-    font-size:10px; font-weight:800; letter-spacing:0.08em; text-transform:uppercase;
-    padding:3px 8px; border-radius:999px;
-  }
 
   .foot{ margin-top:34px; color:#5d6169; font-size:12px; line-height:1.6; }
 </style>

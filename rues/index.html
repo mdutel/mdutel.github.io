@@ -326,10 +326,17 @@
     };
     reader.readAsText(file);
   }
+  // Clés dangereuses en notation crochet sur un objet littéral ({}) : elles
+  // n'ajoutent pas une entrée mais modifient/lisent Object.prototype lui-même.
+  // Un fichier de progression importé (arbitraire, potentiellement forgé) ne
+  // doit jamais pouvoir écrire dessus — d'où le filtrage avant fusion.
+  const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+  function safeKeys(obj) { return Object.keys(obj || {}).filter(k => !UNSAFE_KEYS.has(k)); }
+
   function mergeProgress(incoming) {
-    Object.keys(incoming.items || {}).forEach(insee => {
+    safeKeys(incoming.items).forEach(insee => {
       PROGRESS.items[insee] = PROGRESS.items[insee] || {};
-      Object.keys(incoming.items[insee]).forEach(name => {
+      safeKeys(incoming.items[insee]).forEach(name => {
         const inc = incoming.items[insee][name];
         const cur = PROGRESS.items[insee][name];
         if (!cur || (inc.lastSeen || 0) >= (cur.lastSeen || 0)) PROGRESS.items[insee][name] = inc;
