@@ -96,12 +96,18 @@
   .nav .nav-btn:disabled{ opacity:0.4; cursor:default; }
   .nav .nav-sep{ flex:1; }
   .nav .nav-btn.ghost{ background:transparent; color:#8d939b; text-transform:none; letter-spacing:0; font-weight:600; padding:9px 10px; }
+  .nav .scope-toggle{ display:inline-flex; border:1px solid #2a313c; border-radius:8px; overflow:hidden; }
+  .nav .scope-btn{ background:#1c2128; color:#cfd3da; border:none; cursor:pointer; padding:9px 13px; font-size:12px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; }
+  .nav .scope-btn.active{ background:#6EC4E8; color:#0b2530; }
 
   .review-banner{ margin-bottom:12px; }
   .review-banner .pill{
     display:inline-block; background:#E8A33D; color:#1a1205; font-weight:800;
     font-size:11px; letter-spacing:0.06em; text-transform:uppercase; padding:5px 11px; border-radius:999px;
   }
+
+  /* intramuros mode: out-of-scope stations shown for context but dimmed & inert */
+  .stop.excluded, .fstop.excluded{ opacity:0.32; filter:grayscale(0.6); pointer-events:none; }
 
   /* flagged ("à réviser") marker on the plan */
   .stop.flagged .dot{ outline:2px solid var(--review); outline-offset:2px; }
@@ -909,6 +915,62 @@ function lineAllStations(lineKey){
   return out;
 }
 
+/* ---------- Intramuros mode ---------- */
+// Stations excluded in "intramuros" scope: the contiguous out-of-Paris tails of
+// each line, extremity by extremity (validated by point-in-polygon against the
+// arrondissement rings, then adjusted to Maxime's mental map — lines 1/2/3/3bis/
+// 6/7bis/9/10 are kept whole). Attached to each line as a Set for O(1) lookup.
+// Non-destructive: toggling scope only filters; excluded stations keep their stats.
+const INTRAMUROS_EXCLUDE = {
+  "4": ["Mairie de Montrouge","Barbara","Bagneux - Lucie Aubrac"],
+  "5": ["Hoche","Église de Pantin","Bobigny - Pantin - Raymond Queneau","Bobigny - Pablo Picasso"],
+  "7": ["Aubervilliers - Pantin - Quatre Chemins","Fort d'Aubervilliers","La Courneuve - 8 Mai 1945",
+        "Pierre et Marie Curie","Mairie d'Ivry",
+        "Le Kremlin-Bicêtre","Villejuif - Léo Lagrange","Villejuif - Paul Vaillant-Couturier","Villejuif - Louis Aragon"],
+  "8": ["Liberté","Charenton - Écoles","École Vétérinaire de Maisons-Alfort","Maisons-Alfort - Stade",
+        "Maisons-Alfort - Les Juilliottes","Créteil - L'Échat","Créteil - Université","Créteil - Préfecture","Créteil - Pointe du Lac"],
+  "11": ["Mairie des Lilas","Serge Gainsbourg","Romainville - Carnot","Montreuil - Hôpital","La Dhuys","Coteaux Beauclair","Rosny-Bois-Perrier"],
+  "12": ["Aubervilliers - Front Populaire","Aimé Césaire","Mairie d'Aubervilliers","Corentin Celton","Mairie d'Issy"],
+  "13": ["Malakoff - Plateau de Vanves","Malakoff - Rue Étienne Dolet","Châtillon - Montrouge",
+         "Garibaldi","Mairie de Saint-Ouen","Carrefour Pleyel","Saint-Denis - Porte de Paris","Basilique de Saint-Denis","Saint-Denis - Université",
+         "Mairie de Clichy","Gabriel Péri","Les Agnettes","Asnières - Gennevilliers - Les Courtilles"],
+  "14": ["Saint-Ouen","Mairie de Saint-Ouen","Saint-Denis - Pleyel",
+         "Hôpital Bicêtre","Villejuif - Gustave Roussy","L'Haÿ-les-Roses","Chevilly-Larue","Thiais - Orly","Aéroport d'Orly"]
+};
+Object.keys(INTRAMUROS_EXCLUDE).forEach(k=>{
+  if(!LINES[k]){ console.warn("intramuros: unknown line", k); return; }
+  const known = new Set(lineAllStations(k).map(s=>s.n));
+  INTRAMUROS_EXCLUDE[k].forEach(n=>{ if(!known.has(n)) console.warn("intramuros: unknown station on line "+k+":", n); });
+  LINES[k].exclude = new Set(INTRAMUROS_EXCLUDE[k]);
+});
+
+// true when this station must be hidden/greyed/never-asked given the current scope
+function isExcluded(lineKey, name){
+  if(state.scope !== 'intramuros') return false;
+  const L = LINES[lineKey];
+  return !!(L && L.exclude && L.exclude.has(name));
+}
+// clip an ordered run of stations (map segment) to the in-scope subset. Exclusions
+// are always contiguous tails, so the survivors stay contiguous → no drawing gaps.
+function mapSegStations(lineKey, seg){
+  return state.scope === 'intramuros' ? seg.filter(st=>!isExcluded(lineKey, st.n)) : seg;
+}
+
+// scope preference persists per-device in its own key (a view preference, kept out
+// of the exported/imported progress blob on purpose). Default: full network.
+const SCOPE_LS_KEY = "plan-vierge-metro-scope-v1";
+function loadScope(){
+  try{ return localStorage.getItem(SCOPE_LS_KEY) === 'intramuros' ? 'intramuros' : 'full'; }
+  catch(e){ return 'full'; }
+}
+function setScope(sc){
+  if(sc !== 'intramuros' && sc !== 'full') return;
+  state.scope = sc;
+  try{ localStorage.setItem(SCOPE_LS_KEY, sc); }catch(e){ /* no-op if blocked */ }
+  resetLine();   // the active station set changed → rebuild the current session
+  render();
+}
+
 // Official IDFM / RATP line colours (metro + RER reliable; tram shades are best-effort)
 const CORR_COLORS = {
   "1":"#FFCD00","2":"#003CA6","3":"#837902","3bis":"#6EC4E8","4":"#CF009E",
@@ -945,7 +1007,15 @@ const MAP = (function(){
     const a=Math.sin(dLat/2)**2 + Math.cos(lat1*toR)*Math.cos(lat2*toR)*Math.sin(dLng/2)**2;
     return 2*R*Math.asin(Math.sqrt(a));
   }
-  return {W,H,project,unproject,haversine};
+  // pixel bbox of Paris proper (arrondissement rings) — used to crop the map's
+  // viewBox in intramuros scope so no empty suburban band is shown. Small margin
+  // so boundary (Porte) dots/labels aren't clipped.
+  let pminX=Infinity,pminY=Infinity,pmaxX=-Infinity,pmaxY=-Infinity;
+  GEO.arr.forEach(a=>a.ring.forEach(([lng,lat])=>{ const [x,y]=project(lng,lat);
+    if(x<pminX)pminX=x; if(x>pmaxX)pmaxX=x; if(y<pminY)pminY=y; if(y>pmaxY)pmaxY=y; }));
+  const pm=16;
+  const parisBox={x:pminX-pm, y:pminY-pm, w:(pmaxX-pminX)+2*pm, h:(pmaxY-pminY)+2*pm};
+  return {W,H,project,unproject,haversine,parisBox};
 })();
 
 function ringPath(ring){
@@ -1023,7 +1093,7 @@ function isScheduled(line, name, ch){
 }
 function scheduledStations(line, ch){
   const m = STORE.stats[line] || {};
-  return Object.keys(m).filter(n => ch ? ((m[n][ch]&&m[n][ch].box>=1)) : (( m[n].name&&m[n].name.box>=1)||(m[n].map&&m[n].map.box>=1)) );
+  return Object.keys(m).filter(n => !isExcluded(line, n) && (ch ? ((m[n][ch]&&m[n][ch].box>=1)) : (( m[n].name&&m[n].name.box>=1)||(m[n].map&&m[n].map.box>=1)) ));
 }
 // stations due now in a channel (box>=1 && due<=now), across every line
 function dueStations(ch){
@@ -1032,6 +1102,7 @@ function dueStations(ch){
   Object.keys(LINES).forEach(line=>{
     const m = STORE.stats[line] || {};
     lineAllStations(line).forEach(s=>{
+      if(isExcluded(line, s.n)) return;   // out-of-scope stations are never due in intramuros
       const st = m[s.n]; const sc = st && st[ch];
       if(sc && (sc.box||0) >= 1 && (sc.due||0) <= now) out.push({line, name:s.n});
     });
@@ -1182,6 +1253,7 @@ let state = {
   map: null,           // carte session {queue:[idx], pos, results:[{name,dist}], phase, click, answered}
   mapLineStyle: "none", // carte: hint level for other lines' routes — "none" | "gray" | "color"
   mapShowStops: false, // carte: show station dot markers along the hint lines
+  scope: "full",       // "full" | "intramuros" — network extent (see isExcluded)
   feedback: null
 };
 
@@ -1260,14 +1332,17 @@ function resetLine(){
   state.selectedChip = null;
   state.bankFilter = "";
   state.feedback = null;
-  state.inPlay = new Set(L.stations.map((s,i)=>i));
-  state.bank = L.stations.map(s=>s.n).sort((a,b)=>a.localeCompare(b,'fr',{sensitivity:'base'}));
+  // in intramuros scope, out-of-Paris stations are dropped from play: not counted,
+  // not clickable, absent from the place-mode bank (they still render, greyed, for context)
+  state.inPlay = new Set(L.stations.map((s,i)=>i).filter(i=>!isExcluded(state.lineKey, L.stations[i].n)));
+  state.bank = L.stations.filter(s=>!isExcluded(state.lineKey, s.n))
+                         .map(s=>s.n).sort((a,b)=>a.localeCompare(b,'fr',{sensitivity:'base'}));
   // carte session: shuffled queue of station indices for the current line that have coordinates
   // (uses every station on the line, both branches for forked lines — geography doesn't care
-  // which branch is selected for the linear "je nomme / je place" exercises)
+  // which branch is selected for the linear "je nomme / je place" exercises), minus out-of-scope
   if(state.mode === "carte"){
     const carteStations = lineAllStations(state.lineKey);
-    const idxs = carteStations.map((s,i)=>i).filter(i=>GEO.stations[carteStations[i].n]);
+    const idxs = carteStations.map((s,i)=>i).filter(i=>GEO.stations[carteStations[i].n] && !isExcluded(state.lineKey, carteStations[i].n));
     state.map = { queue: shuffle(idxs), pos:0, results:[], phase: idxs.length?"ask":"empty", click:null, answered:false };
   } else {
     state.map = null;
@@ -1361,8 +1436,9 @@ function onRevMapClick(ev){
   if(!r || r.answered) return;
   const svg = document.getElementById("mapSvg");
   const rect = svg.getBoundingClientRect();
-  const vx = (ev.clientX - rect.left)/rect.width * MAP.W;
-  const vy = (ev.clientY - rect.top)/rect.height * MAP.H;
+  const b = currentMapBox();
+  const vx = b.x + (ev.clientX - rect.left)/rect.width * b.w;
+  const vy = b.y + (ev.clientY - rect.top)/rect.height * b.h;
   revMapResolve(MAP.unproject(vx, vy));
 }
 function revMapReveal(){ revMapResolve(null); }
@@ -1479,6 +1555,10 @@ function renderNav(){
     `<button class="nav-btn ${state.view==='stats'?'active':''}" onclick="goView('stats')">Stats</button>` +
     `<button class="nav-btn ${state.view==='history'?'active':''}" onclick="goView('history')">Historique</button>` +
     `<button class="nav-btn ${state.view==='solutions'?'active':''}" onclick="goView('solutions')">Solutions</button>` +
+    `<span class="scope-toggle" title="Intramuros = seulement les stations dans Paris ; les prolongements en banlieue sont grisés et jamais demandés.">` +
+      `<button class="scope-btn ${state.scope==='intramuros'?'active':''}" onclick="setScope('intramuros')">Intramuros</button>` +
+      `<button class="scope-btn ${state.scope==='full'?'active':''}" onclick="setScope('full')">Complet</button>` +
+    `</span>` +
     `<span class="nav-sep"></span>` +
     `<button class="nav-btn ghost" onclick="exportHistory()">Exporter</button>` +
     `<label class="nav-btn ghost">Importer<input type="file" accept="application/json,.json" style="display:none" onchange="importHistory(this.files[0]); this.value='';"></label>` +
@@ -1591,11 +1671,14 @@ function traceStopHtml(st, slotMode){
   const reveal = isReview && state.rev ? state.rev.reveal : null; // 'ok' | 'bad' | null
   const isTarget = isReview && idx === state.reviewTargetIdx;
   const targetRevealed = isTarget && !!reveal;
-  const known = state.view==="solutions" || (isReview ? (idx !== state.reviewTargetIdx || targetRevealed) : (slotMode ? !!state.placed[idx] : !!state.named[idx]));
+  const isExcl = isExcluded(state.lineKey, s.n);
+  const known = isExcl || state.view==="solutions" || (isReview ? (idx !== state.reviewTargetIdx || targetRevealed) : (slotMode ? !!state.placed[idx] : !!state.named[idx]));
   const isActive = state.view!=="solutions" && !isReview && !slotMode && state.activeIdx === idx;
   let cls = "fstop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"")
-          + (st.isTerminus?" terminus":"") + (st.lane==='bottom'?" below":"");
-  if(isReview){
+          + (st.isTerminus?" terminus":"") + (st.lane==='bottom'?" below":"") + (isExcl?" excluded":"");
+  if(isExcl){
+    /* out of scope: no review flag, no interaction — just greyed context */
+  } else if(isReview){
     if(isTarget && !targetRevealed) cls += " flagged review-target";
     else if(targetRevealed) cls += reveal==='ok' ? " reveal-ok" : " reveal-bad";
   } else if(isScheduled(state.lineKey, s.n, 'name')){
@@ -1736,11 +1819,14 @@ function renderStrip(slotMode){
     const isHub = s.c.length>0;
     const isTarget = isReview && i === state.reviewTargetIdx;
     const targetRevealed = isTarget && !!reveal;
-    const known = state.view==="solutions" || (isReview ? (i !== state.reviewTargetIdx || targetRevealed) : (slotMode ? !!state.placed[i] : !!state.named[i]));
+    const isExcl = isExcluded(state.lineKey, s.n);
+    const known = isExcl || state.view==="solutions" || (isReview ? (i !== state.reviewTargetIdx || targetRevealed) : (slotMode ? !!state.placed[i] : !!state.named[i]));
     const isActive = state.view!=="solutions" && !isReview && !slotMode && state.activeIdx === i;
     const isTerminus = (i===0 || i===L.stations.length-1);
-    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"");
-    if(isReview){
+    let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"") + (isExcl?" excluded":"");
+    if(isExcl){
+      /* out of scope: no review flag, no interaction — just greyed context */
+    } else if(isReview){
       if(isTarget && !targetRevealed) cls += " flagged review-target";
       else if(targetRevealed) cls += reveal==='ok' ? " reveal-ok" : " reveal-bad";
     } else if(isScheduled(state.lineKey, s.n, 'name')){
@@ -1932,10 +2018,19 @@ const MAP_SHARED_EDGES = (function(){
 })();
 const MAP_EDGE_GAP = 4; // px between parallel strokes at a shared edge
 
+// current SVG viewBox for the map: full network, or cropped to Paris in intramuros
+// scope. All three consumers (buildMapSvg + the two click handlers) go through this
+// so click→coordinate mapping always matches the rendered window.
+function currentMapBox(){
+  return state.scope === 'intramuros'
+    ? MAP.parisBox
+    : {x:0, y:0, w:MAP.W, h:MAP.H};
+}
 function buildMapSvg(opts){
   opts = opts || {};
   const W=MAP.W, H=MAP.H;
-  let s = `<svg id="mapSvg" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;background:#f3f1e8;border-radius:8px;touch-action:manipulation" ${opts.clickable?'onclick="onMapClick(event)"':''}>`;
+  const vb = currentMapBox();
+  let s = `<svg id="mapSvg" viewBox="${_f(vb.x)} ${_f(vb.y)} ${_f(vb.w)} ${_f(vb.h)}" style="width:100%;height:auto;display:block;background:#f3f1e8;border-radius:8px;touch-action:manipulation" ${opts.clickable?'onclick="onMapClick(event)"':''}>`;
   // water (non-interactive)
   s += `<g style="pointer-events:none">` + GEO.water.map(r=>`<path d="${ringPath(r)}" fill="#bcd6ea" stroke="none"/>`).join('') + `</g>`;
   // arrondissements
@@ -1964,7 +2059,8 @@ function buildMapSvg(opts){
     s += `<g style="pointer-events:none">` + LINE_ORDER.map(lk=>{
       const L=LINES[lk];
       const strokeCol = lineStyle === "color" ? L.color : NEUTRAL_LINE;
-      return lineMapSegments(lk).map(segStations=>{
+      return lineMapSegments(lk).map(seg0=>{
+        const segStations = mapSegStations(lk, seg0);
         let seg = "";
         for(let i=0;i<segStations.length-1;i++){
           const a=segStations[i].n, b=segStations[i+1].n;
@@ -1989,7 +2085,7 @@ function buildMapSvg(opts){
   // black is the only choice that stays meaningful at interchanges.
   if(opts.showStops){
     const used = new Set();
-    LINE_ORDER.forEach(lk=> lineMapSegments(lk).forEach(seg=> seg.forEach(st=>{ if(GEO.stations[st.n]) used.add(st.n); })));
+    LINE_ORDER.forEach(lk=> lineMapSegments(lk).forEach(seg=> mapSegStations(lk, seg).forEach(st=>{ if(GEO.stations[st.n]) used.add(st.n); })));
     s += `<g style="pointer-events:none">` + [...used].map(name=>{
       const [x,y]=MAP.project(GEO.stations[name][0], GEO.stations[name][1]);
       return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.4" fill="#14140f"/>`;
@@ -2104,8 +2200,9 @@ function onMapClick(ev){
   if(!m || m.answered) return;
   const svg = document.getElementById("mapSvg");
   const rect = svg.getBoundingClientRect();
-  const vx = (ev.clientX - rect.left)/rect.width * MAP.W;
-  const vy = (ev.clientY - rect.top)/rect.height * MAP.H;
+  const b = currentMapBox();
+  const vx = b.x + (ev.clientX - rect.left)/rect.width * b.w;
+  const vy = b.y + (ev.clientY - rect.top)/rect.height * b.h;
   const [lng,lat] = MAP.unproject(vx, vy);
   carteResolve([lng,lat]);
 }
@@ -2342,7 +2439,7 @@ function renderHistory(panel, note){
 
 /* ---------- Stats view: per-line progress + hardest stations ---------- */
 function lineStats(line){
-  const allStations = lineAllStations(line);
+  const allStations = lineAllStations(line).filter(s=>!isExcluded(line, s.n));
   const total = allStations.length;
   const m = STORE.stats[line] || {};
   let seen=0, scheduled=0, solid=0;
@@ -2383,6 +2480,7 @@ function renderStats(panel, note){
   const rows = [];
   Object.keys(STORE.stats).forEach(line=>{
     Object.keys(STORE.stats[line]).forEach(stationName=>{
+      if(isExcluded(line, stationName)) return;   // hide out-of-scope stations in intramuros
       const st = STORE.stats[line][stationName];
       if((st.misses||0) > 0) rows.push(Object.assign({}, st, {line, stationName}));
     });
@@ -2426,7 +2524,8 @@ function renderOrdre(panel, note){
   const L = LINES[state.lineKey];
 
   const namedCount = Object.keys(state.named).length;
-  if(namedCount >= L.stations.length){
+  const playTotal = state.inPlay.size;
+  if(namedCount >= playTotal){
     state.phase = "finished";
     render();
     return;
@@ -2436,7 +2535,7 @@ function renderOrdre(panel, note){
   const active = state.activeIdx;
   const qcard = (active === null)
     ? `<div class="qcard">
-         <div class="qlabel">Clique un rond « ? » sur la ligne, puis donne le nom de cette station. (${namedCount}/${L.stations.length} trouvées)</div>
+         <div class="qlabel">Clique un rond « ? » sur la ligne, puis donne le nom de cette station. (${namedCount}/${playTotal} trouvées)</div>
        </div>`
     : `<div class="qcard">
          <div class="qlabel">Station sélectionnée — quel est son nom ?</div>
@@ -2550,7 +2649,7 @@ function renderMelange(panel, note){
   const L = LINES[state.lineKey];
 
   const placedCount = Object.keys(state.placed).length;
-  if(placedCount === L.stations.length && state.bank.length===0){
+  if(placedCount === state.inPlay.size && state.bank.length===0){
     maybeFinishMelange();
     if(state.phase==="finished"){ render(); return; }
   }
@@ -2621,13 +2720,13 @@ function onSlotClick(idx){
 }
 
 function maybeFinishMelange(){
-  const L = LINES[state.lineKey];
-  if(Object.keys(state.placed).length === L.stations.length){
+  if(Object.keys(state.placed).length === state.inPlay.size){
     state.phase = "finished";
   }
 }
 
 loadStore();
+state.scope = loadScope();
 resetLine();
 render();
 
