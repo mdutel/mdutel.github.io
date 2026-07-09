@@ -234,6 +234,18 @@
   .fstop.slot.target .dot{ border-color: var(--ink); }
   .fstop.slot.wrong-flash .dot{ background: var(--bad); border-color: var(--bad); }
   .fstop.flagged .dot{ outline:2px solid var(--review); outline-offset:2px; }
+  /* révision : la station demandée (« ? ») a un cerclage orange plus large ; les
+     autres stations ne sont PAS cerclées, même si dues. Une fois révélée, son nom
+     s'affiche en vert (juste) ou rouge (raté) à la place du « ? ». */
+  .stop.flagged.review-target .dot, .fstop.flagged.review-target .dot{
+    outline-width:3px; outline-offset:4px;
+  }
+  .stop.reveal-ok .label, .fstop.reveal-ok .label{
+    color:#0f7a3d !important; background:transparent !important; padding:0 !important; font-weight:800;
+  }
+  .stop.reveal-bad .label, .fstop.reveal-bad .label{
+    color:#c0392b !important; background:transparent !important; padding:0 !important; font-weight:800;
+  }
   .corr-chip-mini{
     font-size:8px; font-weight:800; color:#fff; border-radius:3px; padding:1px 3px; line-height:1.3;
   }
@@ -1325,21 +1337,23 @@ function reviewSubmit(){
 function reviewAccept(){
   const c = reviewCurrent(); if(!c || state.rev._resolving) return;
   state.rev._resolving = true;
-  const fb = document.getElementById("revFb");
-  if(fb){ fb.textContent = "✓ Exact."; fb.className = "feedback ok"; }
   const grade = state.rev.wrong===0 ? 'clean' : 'miss';
   applyGrade(c.line, c.name, grade, 'name', state.rev.wrong);
   state.rev.results.push({line:c.line, name:c.name, wrong:state.rev.wrong, revealed:false, correct:true, dist:0});
-  setTimeout(reviewAdvance, 350);
+  // reveal the station name in green on the strip, then advance after a beat
+  state.rev.reveal = 'ok';
+  render();
+  setTimeout(reviewAdvance, 1100);
 }
 function reviewSkip(){
   const c = reviewCurrent(); if(!c || state.rev._resolving) return;
   state.rev._resolving = true;
   applyGrade(c.line, c.name, 'miss', 'name', 1);
   state.rev.results.push({line:c.line, name:c.name, wrong:state.rev.wrong, revealed:true, correct:false, dist:99999});
-  const fb = document.getElementById("revFb");
-  if(fb){ fb.textContent = `C'était « ${c.name} ».`; fb.className = "feedback bad"; }
-  setTimeout(reviewAdvance, 900);
+  // reveal the name in red on the strip and wait for the user to proceed (learn
+  // from the mistake) — no auto-advance.
+  state.rev.reveal = 'bad';
+  render();
 }
 /* -- map channel: click to place -- */
 function onRevMapClick(ev){
@@ -1372,6 +1386,7 @@ function revMapNext(){
 function reviewAdvance(){
   const r = state.rev;
   r._resolving = false;
+  r.reveal = null;
   r.pos++;
   r.wrong = 0;
   r.hintUsed = false;
@@ -1573,17 +1588,29 @@ function traceStopHtml(st, slotMode){
   const s = st.station, idx = st.idx;
   const isHub = s.c.length>0;
   const isReview = state.view==="review";
-  const known = state.view==="solutions" || (isReview ? idx !== state.reviewTargetIdx : (slotMode ? !!state.placed[idx] : !!state.named[idx]));
+  const reveal = isReview && state.rev ? state.rev.reveal : null; // 'ok' | 'bad' | null
+  const isTarget = isReview && idx === state.reviewTargetIdx;
+  const targetRevealed = isTarget && !!reveal;
+  const known = state.view==="solutions" || (isReview ? (idx !== state.reviewTargetIdx || targetRevealed) : (slotMode ? !!state.placed[idx] : !!state.named[idx]));
   const isActive = state.view!=="solutions" && !isReview && !slotMode && state.activeIdx === idx;
   let cls = "fstop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"")
           + (st.isTerminus?" terminus":"") + (st.lane==='bottom'?" below":"");
-  if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
+  if(isReview){
+    if(isTarget && !targetRevealed) cls += " flagged review-target";
+    else if(targetRevealed) cls += reveal==='ok' ? " reveal-ok" : " reveal-bad";
+  } else if(isScheduled(state.lineKey, s.n, 'name')){
+    cls += " flagged";
+  }
   const clickable = !known && !isReview;
   if(clickable) cls += " slot";
   if(state.flashWrong===idx) cls += " wrong-flash";
-  const dotStyle = known
+  let dotStyle = known
     ? (isHub ? `background:#fff;border-color:#14140f` : `background:${L.color};border-color:${L.color}`)
     : "";
+  if(targetRevealed){
+    const col = reveal==='ok' ? '#0f9d52' : '#e05a2b';
+    dotStyle = `background:${col};border-color:${col}`;
+  }
   const label = known ? s.n : (isActive ? "…" : "?");
   const showChips = isHub;
   const onclick = clickable ? (slotMode ? `onclick="onSlotClick(${idx})"` : `onclick="onDotClick(${idx})"`) : "";
@@ -1704,19 +1731,31 @@ function renderStrip(slotMode){
   let html = `<div class="strip-scroll"><div class="strip">
     <div class="spine" style="background:${L.color}"></div>`;
   const isReview = state.view==="review";
+  const reveal = isReview && state.rev ? state.rev.reveal : null; // 'ok' | 'bad' | null
   L.stations.forEach((s,i)=>{
     const isHub = s.c.length>0;
-    const known = state.view==="solutions" || (isReview ? i !== state.reviewTargetIdx : (slotMode ? !!state.placed[i] : !!state.named[i]));
+    const isTarget = isReview && i === state.reviewTargetIdx;
+    const targetRevealed = isTarget && !!reveal;
+    const known = state.view==="solutions" || (isReview ? (i !== state.reviewTargetIdx || targetRevealed) : (slotMode ? !!state.placed[i] : !!state.named[i]));
     const isActive = state.view!=="solutions" && !isReview && !slotMode && state.activeIdx === i;
     const isTerminus = (i===0 || i===L.stations.length-1);
     let cls = "stop" + (isHub?" hub":"") + (known?" done":"") + (isActive?" current":"") + (isTerminus?" terminus":"");
-    if(isScheduled(state.lineKey, s.n, 'name')) cls += " flagged";
+    if(isReview){
+      if(isTarget && !targetRevealed) cls += " flagged review-target";
+      else if(targetRevealed) cls += reveal==='ok' ? " reveal-ok" : " reveal-bad";
+    } else if(isScheduled(state.lineKey, s.n, 'name')){
+      cls += " flagged";
+    }
     const clickable = !known && !isReview;
     if(clickable) cls += " slot";
     if(state.flashWrong===i) cls += " wrong-flash";
-    const dotStyle = known
+    let dotStyle = known
       ? (isHub ? `style="background:#fff;border-color:#14140f"` : `style="background:${L.color};border-color:${L.color}"`)
       : "";
+    if(targetRevealed){
+      const col = reveal==='ok' ? '#0f9d52' : '#e05a2b';
+      dotStyle = `style="background:${col};border-color:${col}"`;
+    }
     const label = known ? s.n : (isActive ? "…" : "?");
     const showChips = isHub;
     const onclick = clickable
@@ -2219,6 +2258,23 @@ function renderReview(panel, note){
   }
 
   // name channel: typing mini-strip card
+  const revealed = r.reveal; // 'ok' | 'bad' | null
+  let qcardInner;
+  if(revealed === 'ok'){
+    qcardInner = `<div class="feedback ok" style="font-size:15px">✓ Exact — « ${c.name} »</div>`;
+  } else if(revealed === 'bad'){
+    qcardInner = `<div class="feedback bad" style="font-size:15px">C'était « ${c.name} ».</div>
+      <div class="row-btn"><button class="btn btn-primary" onclick="reviewAdvance()">Continuer</button></div>`;
+  } else {
+    qcardInner = `<div class="qlabel">Quelle est la station « ? » surlignée ?</div>
+      <input type="text" id="revInput" placeholder="Tape le nom de la station" autocomplete="off" autocapitalize="off">
+      <div class="row-btn">
+        <button class="btn btn-primary" onclick="reviewSubmit()">Valider</button>
+        <button class="btn btn-secondary" onclick="reviewHint()">Indice</button>
+        <button class="btn btn-secondary" onclick="reviewSkip()">Je ne sais pas</button>
+      </div>
+      <div id="revFb" class="feedback"></div>`;
+  }
   panel.innerHTML = `${bar}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       ${lineBadge(c.line)}
@@ -2226,22 +2282,15 @@ function renderReview(panel, note){
       <span style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:700">Carte ${r.pos+1} / ${total}</span>
     </div>
     ${renderReviewStrip(c.line, c.name)}
-    <div class="qcard">
-      <div class="qlabel">Quelle est la station « ? » surlignée ?</div>
-      <input type="text" id="revInput" placeholder="Tape le nom de la station" autocomplete="off" autocapitalize="off">
-      <div class="row-btn">
-        <button class="btn btn-primary" onclick="reviewSubmit()">Valider</button>
-        <button class="btn btn-secondary" onclick="reviewHint()">Indice</button>
-        <button class="btn btn-secondary" onclick="reviewSkip()">Je ne sais pas</button>
-      </div>
-      <div id="revFb" class="feedback"></div>
-    </div>`;
+    <div class="qcard">${qcardInner}</div>`;
   fitFinishedStrip();
-  note.textContent = "Validation automatique dès que c'est bon ; fautes de frappe tolérées.";
-  const inp = document.getElementById("revInput");
-  inp.focus();
-  inp.addEventListener("keydown", e=>{ if(e.key==="Enter") reviewSubmit(); });
-  inp.addEventListener("input", reviewInput);
+  note.textContent = revealed ? "" : "Validation automatique dès que c'est bon ; fautes de frappe tolérées.";
+  if(!revealed){
+    const inp = document.getElementById("revInput");
+    inp.focus();
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter") reviewSubmit(); });
+    inp.addEventListener("input", reviewInput);
+  }
 }
 // map svg for review: same as buildMapSvg but wired to the review click handler
 function buildMapSvgRev(opts){

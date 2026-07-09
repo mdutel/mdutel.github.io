@@ -657,6 +657,7 @@
 
   // ---------- Modale (fin de tour / stats / historique) ----------
   let modalView = null; // "summary" | "stats" | "history" | null
+  let statsInsee = null; // arrondissement affiché dans la modale Stats (indépendant de la carte)
   function openModal(view) {
     modalView = view;
     document.getElementById("modal-overlay").classList.add("show");
@@ -669,7 +670,7 @@
   function renderModal() {
     const body = document.getElementById("modal-body");
     if (modalView === "summary") body.innerHTML = renderSummaryView();
-    else if (modalView === "stats") body.innerHTML = renderStatsView();
+    else if (modalView === "stats") renderStatsAsync(body);
     else if (modalView === "history") body.innerHTML = renderHistoryView();
   }
   const MODE_LABELS = { training: "Tour terminé", review: "Révision terminée", mistakes: "Erreurs revues" };
@@ -687,61 +688,91 @@
         <button onclick="RUES.viewSolution()">Voir la solution</button>
       </div>`;
   }
-  function arrStats(insee) {
-    const isLoaded = insee === currentInsee;
-    const total = isLoaded ? targets.length : null;
-    const bucket = PROGRESS.items[insee] || {};
-    const records = Object.values(bucket);
-    const attempted = records.filter(r => r.attempts > 0).length;
-    const scheduled = records.filter(r => r.box >= 1).length;
-    const solid = records.filter(r => isGraduated(r)).length;
-    return { total, attempted, scheduled, solid, untouched: total !== null ? total - attempted : null };
+  // Noms de cibles + total par arrondissement, chargés à la demande depuis le module
+  // de données (indépendamment de l'arrondissement affiché sur la carte), puis mis en cache.
+  const arrNamesCache = {};
+  function arrNames(insee, cb) {
+    if (arrNamesCache[insee]) { cb(arrNamesCache[insee]); return; }
+    loadArrondissement(insee, function (data) {
+      const names = new Set();
+      data.axes.forEach(a => names.add(a.name));
+      data.pois.forEach(p => names.add(p.name));
+      arrNamesCache[insee] = { total: names.size, names };
+      purgeStale(insee, names);   // nettoyage résiduel : fait une seule fois, au premier chargement des noms
+      cb(arrNamesCache[insee]);
+    });
   }
-  function renderStatsView() {
-    const blocks = ARRONDISSEMENTS.filter(a => a.insee === currentInsee || PROGRESS.items[a.insee]).map(a => {
-      const st = arrStats(a.insee);
-      const pc = n => st.total ? Math.round(100 * n / st.total) : 0;
-      const metaTxt = st.total !== null
-        ? `${st.solid} solides · ${st.scheduled} en révision · ${st.untouched} non vues`
-        : `${st.attempted} tentées`;
-      const bar = st.total !== null
-        ? `<div class="cnt-bar" style="height:8px;display:flex;overflow:hidden">
-             <i style="width:${pc(st.solid)}%;background:var(--ok)"></i>
-             <i style="width:${pc(st.scheduled)}%;background:var(--accent)"></i>
-           </div>`
-        : "";
-      return `<div class="stat-block">
-        <div class="stat-block-head"><b>${escapeHtml(a.label)}</b><span class="meta">${metaTxt}</span></div>
-        ${bar}
+  // Supprime définitivement les enregistrements de progression dont le nom n'existe plus
+  // dans les données de l'arrondissement (voies retirées/renommées lors de la curation).
+  // Lossless pour les vraies cibles : leur nom est forcément dans le jeu de données courant.
+  function purgeStale(insee, names) {
+    const bucket = PROGRESS.items[insee];
+    if (!bucket) return 0;
+    let removed = 0;
+    Object.keys(bucket).forEach(name => { if (!names.has(name)) { delete bucket[name]; removed++; } });
+    if (removed) saveProgress(PROGRESS);
+    return removed;
+  }
+  function arrStats(insee, meta) {
+    // Ne compte que les cibles réellement présentes dans les données courantes de
+    // l'arrondissement : les enregistrements résiduels (voies retirées lors de la
+    // curation) sont ignorés — sinon « non vues » pouvait devenir négatif.
+    const bucket = PROGRESS.items[insee] || {};
+    let attempted = 0, scheduled = 0, solid = 0;
+    meta.names.forEach(name => {
+      const r = bucket[name];
+      if (!r || !(r.attempts > 0)) return;
+      attempted++;
+      if (r.box >= 1) scheduled++; else solid++;
+    });
+    return { total: meta.total, attempted, scheduled, solid, untouched: meta.total - attempted };
+  }
+  function renderStatsAsync(body) {
+    const insee = statsInsee;
+    arrNames(insee, function (meta) {
+      if (modalView !== "stats" || statsInsee !== insee) return; // vue changée pendant le chargement
+      body.innerHTML = renderStatsView(insee, meta);
+    });
+  }
+  function renderStatsView(insee, meta) {
+    const st = arrStats(insee, meta);
+    const pc = n => st.total ? Math.round(100 * n / st.total) : 0;
+    const arrMeta = ARRONDISSEMENTS.find(a => a.insee === insee);
+    const options = ARRONDISSEMENTS.map(a =>
+      `<option value="${a.insee}"${a.insee === insee ? " selected" : ""}>${escapeHtml(a.label)}</option>`
+    ).join("");
+    const bar = `<div class="cnt-bar" style="height:8px;display:flex;overflow:hidden">
+        <i style="width:${pc(st.solid)}%;background:var(--ok)"></i>
+        <i style="width:${pc(st.scheduled)}%;background:var(--accent)"></i>
       </div>`;
-    }).join("") || `<div class="hist-empty">Aucune donnée pour l'instant.</div>`;
 
+    // Cibles les plus difficiles — scopées à l'arrondissement sélectionné, noms valides uniquement.
+    const bucket = PROGRESS.items[insee] || {};
     const rows = [];
-    Object.keys(PROGRESS.items).forEach(insee => {
-      Object.keys(PROGRESS.items[insee]).forEach(name => {
-        const rec = PROGRESS.items[insee][name];
-        if ((rec.misses || 0) > 0) rows.push({ insee, name, misses: rec.misses, box: rec.box });
-      });
+    meta.names.forEach(name => {
+      const rec = bucket[name];
+      if (rec && (rec.misses || 0) > 0) rows.push({ name, misses: rec.misses, box: rec.box });
     });
     rows.sort((a, b) => b.misses - a.misses);
     const hardest = rows.slice(0, 20);
-    const hardRows = hardest.length ? hardest.map(r => {
-      const meta = ARRONDISSEMENTS.find(a => a.insee === r.insee);
-      return `<tr>
+    const hardRows = hardest.length ? hardest.map(r =>
+      `<tr>
         <td>${escapeHtml(r.name)}</td>
-        <td style="color:var(--panel-dim)">${meta ? escapeHtml(meta.label) : escapeHtml(r.insee)}</td>
         <td>${r.misses} raté${r.misses > 1 ? "s" : ""}${r.box >= 1 ? " · en révision" : ""}</td>
-      </tr>`;
-    }).join("") : `<tr><td colspan="3" class="hist-empty">Aucun raté pour l'instant.</td></tr>`;
+      </tr>`
+    ).join("") : `<tr><td colspan="2" class="hist-empty">Aucun raté pour l'instant.</td></tr>`;
 
-    const meta = ARRONDISSEMENTS.find(a => a.insee === currentInsee);
     return `
       <div class="modal-h">Stats</div>
-      ${blocks}
+      <select id="stats-arr-select" class="arr-select" aria-label="Arrondissement" style="margin-bottom:16px" onchange="RUES.setStatsArr(this.value)">${options}</select>
+      <div class="stat-block">
+        <div class="stat-block-head"><b>${escapeHtml(arrMeta ? arrMeta.label : insee)}</b><span class="meta">${st.solid} solides · ${st.scheduled} en révision · ${st.untouched} non vues</span></div>
+        ${bar}
+      </div>
       <div class="modal-section modal-h">Cibles les plus difficiles</div>
       <table class="hardest-table"><tbody>${hardRows}</tbody></table>
       <div class="hist-footer">
-        <button onclick="RUES.resetArr()">Réinitialiser la mémorisation${meta ? " — " + escapeHtml(meta.label) : ""}</button>
+        <button onclick="RUES.resetArr()">Réinitialiser la mémorisation${arrMeta ? " — " + escapeHtml(arrMeta.label) : ""}</button>
       </div>`;
   }
   function fmtDate(ts) {
@@ -928,6 +959,7 @@
       document.title = "Plan Vierge — " + meta.label + " arrondissement";
       document.querySelector(".map-wrap").dataset.arr = meta.label;
       setupProjection(); buildTargets(); renderSVG();
+      arrNames(insee, function () {});   // purge les enregistrements résiduels de cet arrondissement
       startRound();
     });
   }
@@ -954,7 +986,7 @@
       });
     });
     document.getElementById("review-btn").addEventListener("click", startDueReview);
-    document.getElementById("stats-btn").addEventListener("click", function () { openModal("stats"); });
+    document.getElementById("stats-btn").addEventListener("click", function () { statsInsee = currentInsee; openModal("stats"); });
     document.getElementById("history-btn").addEventListener("click", function () { openModal("history"); });
     document.getElementById("modal-close").addEventListener("click", closeModal);
     document.getElementById("modal-overlay").addEventListener("click", function (e) { if (e.target === this) closeModal(); });
@@ -971,9 +1003,12 @@
     },
     reviewMistakes: startMistakesReview,
     viewSolution() { closeModal(); setSolutionMode(true); },
+    setStatsArr(insee) { statsInsee = insee; renderModal(); },
     resetArr() {
-      if (!confirm("Effacer la progression mémorisée pour cet arrondissement ? (n'affecte pas le tour en cours)")) return;
-      delete PROGRESS.items[currentInsee];
+      const insee = statsInsee || currentInsee;
+      const meta = ARRONDISSEMENTS.find(a => a.insee === insee);
+      if (!confirm("Effacer la progression mémorisée pour " + (meta ? meta.label : insee) + " ? (n'affecte pas le tour en cours)")) return;
+      delete PROGRESS.items[insee];
       saveProgress(PROGRESS);
       updateCounters(); renderModal();
     },
