@@ -318,7 +318,14 @@
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const d = JSON.parse(reader.result);
+        let d = JSON.parse(reader.result);
+        // Sauvegarde unifiée (page d'accueil) : on extrait la part rues et on la
+        // fusionne par le chemin normal, sanitation comprise — aucune logique de
+        // sécurité dupliquée ici.
+        if (d && d.format === "plan-vierge-backup") {
+          if (!d.rues) { alert("Cette sauvegarde ne contient pas de données Rues."); return; }
+          d = d.rues;
+        }
         if (!d || !d.items) throw new Error("format");
         mergeProgress(d);
         saveProgress(PROGRESS);

@@ -42,6 +42,14 @@
   .card .go{ font-size:13px; font-weight:800; letter-spacing:0.02em; }
 
   .foot{ margin-top:34px; color:#5d6169; font-size:12px; line-height:1.6; }
+  .backup{ margin-top:30px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .backup button{
+    font:inherit; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; font-weight:700;
+    color:var(--accent); background:transparent; border:1.5px solid #4a4d55; border-radius:8px;
+    padding:9px 16px; cursor:pointer; transition:border-color .12s ease, color .12s ease;
+  }
+  .backup button:hover{ border-color:var(--accent); }
+  .backup .hint{ color:#5d6169; font-size:12px; }
 </style>
 </head>
 <body>
@@ -70,9 +78,50 @@
       </a>
     </div>
 
+    <div class="backup">
+      <button type="button" onclick="exportAll()">Tout exporter</button>
+      <span class="hint">Métro + Rues dans un seul fichier de sauvegarde.</span>
+    </div>
+
     <div class="foot">
-      Les données (scores, stations à réviser) restent dans ton navigateur, sur cet appareil. Pense à exporter/importer ton historique pour passer d'un appareil à l'autre.
+      Les données (scores, stations à réviser) restent dans ton navigateur, sur cet appareil. « Tout exporter » regroupe les deux outils dans une seule sauvegarde. Pour restaurer, ouvre le fichier avec le bouton « Importer » de chaque outil : chacun y retrouve automatiquement sa propre part.
     </div>
   </div>
+
+  <script>
+  // Sauvegarde unifiée : la page d'accueil et les deux outils partagent la même
+  // origine (mdutel.github.io), donc leurs clés localStorage sont lisibles ici.
+  // On enveloppe les blobs de chaque outil SANS interpréter leur schéma interne
+  // — quand métro ou rues fait évoluer sa structure, ce fichier continue de
+  // marcher sans modification. L'enveloppe est conçue pour être ré-importable
+  // plus tard (un futur « Tout importer » n'aurait qu'à réécrire chaque clé).
+  var BACKUP_KEYS = { metro: "plan-vierge-metro-v1", rues: "rues_progress_v1" };
+
+  function readTool(key){
+    var raw;
+    try{ raw = localStorage.getItem(key); }catch(e){ return null; }   // localStorage bloqué
+    if(raw == null) return null;                                       // outil jamais utilisé
+    try{ return JSON.parse(raw); }catch(e){ return raw; }              // corrompu → brut, on ne perd rien
+  }
+
+  function exportAll(){
+    try{
+      var bundle = {
+        format: "plan-vierge-backup",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        metro: readTool(BACKUP_KEYS.metro),
+        rues:  readTool(BACKUP_KEYS.rues)
+      };
+      var blob = new Blob([JSON.stringify(bundle, null, 2)], { type:"application/json" });
+      var url = URL.createObjectURL(blob);
+      var day = new Date().toISOString().slice(0,10);   // YYYY-MM-DD, une sauvegarde par date
+      var a = document.createElement("a");
+      a.href = url; a.download = "plan-vierge-sauvegarde-" + day + ".json";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }catch(e){ alert("Export impossible dans ce contexte."); }
+  }
+  </script>
 </body>
 </html>

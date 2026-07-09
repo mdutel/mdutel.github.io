@@ -1080,7 +1080,14 @@ function importHistory(file){
   const reader = new FileReader();
   reader.onload = () => {
     try{
-      const d = JSON.parse(reader.result);
+      let d = JSON.parse(reader.result);
+      // Sauvegarde unifiée (page d'accueil) : on extrait la part métro et on la
+      // fusionne par le chemin normal, sanitation comprise — aucune logique de
+      // sécurité dupliquée ici.
+      if(d && d.format === "plan-vierge-backup"){
+        if(!d.metro){ alert("Cette sauvegarde ne contient pas de données Métro."); return; }
+        d = d.metro;
+      }
       if(!d || !d.stats) throw new Error("format");
       mergeStore(d);
       saveStore();
