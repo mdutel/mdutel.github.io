@@ -8,7 +8,7 @@
   :root{
     --paper:#E6E8E5; --ink:#36424A; --ink-soft:#9AA4A2; --grid:#D3D7D2;
     --poi:#5E7D78; --accent:#DD8A2E; --ok:#4F8A6B; --err:#B85A4E;
-    --outside:#D6D9D3; --seine:#A9C4D0; --contourln:#AEB6AC;
+    --outside:#D6D9D3; --seine:#A9C4D0; --contourln:#AEB6AC; --bievre:#8AA6B4; --hint:#5C79B0;
     --panel:#283037; --panel-2:#313b43; --panel-text:#E9EBE7; --panel-dim:#8A969C; --line:#3c4750;
   }
   *{box-sizing:border-box}
@@ -30,6 +30,12 @@
   .contour-fill{fill:var(--paper);stroke:none}
   .seine{fill:var(--seine);stroke:none;opacity:.92}
   .contour-line{fill:none;stroke:var(--contourln);stroke-width:1.4}
+  /* Bièvre — cours d'eau (couvert) en fond de carte, teinte gris-bleu, tracé pointillé */
+  .bievre{fill:none;stroke:var(--bievre);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:5 4;opacity:.9}
+  /* Quartiers administratifs — invisibles au repos, surlignés à l'indice */
+  .quartier{fill:none;stroke:none;pointer-events:none}
+  .quartier.on{fill:rgba(92,121,176,.18);stroke:var(--hint);stroke-width:1.5;stroke-dasharray:7 4;animation:qpulse .55s ease-in-out 2}
+  @keyframes qpulse{0%,100%{fill-opacity:.18}50%{fill-opacity:.4}}
 
   /* États carto */
   .axe{stroke:var(--ink);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:stroke .12s,stroke-width .12s}
@@ -59,14 +65,14 @@
   #prompt-name{font-size:25px;font-weight:600;line-height:1.15;margin:9px 0 10px;letter-spacing:-.01em}
   #prompt-cat{display:inline-block;font:500 12px ui-monospace,Menlo,monospace;color:var(--poi);border:1px solid var(--line);border-radius:999px;padding:3px 11px}
   #msg{min-height:18px;font-size:13px;font-weight:500;color:var(--panel-dim)}
-  #msg[data-kind="ok"]{color:var(--ok)} #msg[data-kind="err"]{color:var(--err)} #msg[data-kind="reveal"]{color:var(--accent)}
+  #msg[data-kind="ok"]{color:var(--ok)} #msg[data-kind="err"]{color:var(--err)} #msg[data-kind="reveal"]{color:var(--accent)} #msg[data-kind="hint"]{color:var(--hint)}
   .row{display:flex;gap:9px}
   button{font-family:inherit;font-size:13px;font-weight:500;border:1px solid var(--line);background:var(--panel-2);color:var(--panel-text);border-radius:8px;padding:10px 13px;cursor:pointer;transition:background .12s,border-color .12s}
   button:hover{background:#3a454e}
   button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .arr-select{width:100%;font-family:inherit;font-size:13px;font-weight:500;border:1px solid var(--line);background:var(--panel-2);color:var(--panel-text);border-radius:8px;padding:9px 11px;cursor:pointer}
   .arr-select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  #idk{flex:1}
+  #hint{flex:1} #idk{flex:1} #restart{flex:1}
   #solution-toggle{width:100%;text-align:left;display:flex;justify-content:space-between;align-items:center}
   #solution-toggle::after{content:"activer";font:500 11px ui-monospace,Menlo,monospace;color:var(--panel-dim)}
   #solution-toggle[data-on="1"]{border-color:var(--accent)}
@@ -95,6 +101,33 @@
   .nav-btn:disabled,.nav-btn.is-empty{opacity:.45;cursor:default}
   .nav-btn:disabled .badge-count,.nav-btn.is-empty .badge-count{color:var(--panel-dim)}
 
+  /* ---------- Mode démo (gèle les stats le temps de montrer l'outil) ---------- */
+  .demo-stripes{background:repeating-linear-gradient(45deg,#d6362f 0 16px,#f7f5ef 16px 32px)}
+  #demo-banner{display:none}
+  body.demo-on #demo-banner{display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:15;padding:9px 10px;border-radius:9px;border:2px solid #d6362f;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+  #demo-banner .demo-msg{flex:1;font-size:10.5px;font-weight:800;letter-spacing:.02em;color:#1a1205;text-transform:uppercase;line-height:1.3;background:rgba(247,245,239,.9);padding:5px 8px;border-radius:5px}
+  #demo-banner .demo-quit{background:#14140f;color:#f7f5ef;border:none;cursor:pointer;padding:7px 11px;font-size:11px;font-weight:800;border-radius:7px;text-transform:uppercase;letter-spacing:.03em}
+  #demo-banner .demo-quit:hover{background:#000}
+  /* cadre « chantier » : élément fixe par-dessus le contenu plein écran (un box-shadow inset
+     sur body serait masqué par la .stage qui remplit tout le viewport) */
+  body.demo-on::after{content:"";position:fixed;inset:0;z-index:12;pointer-events:none;border:6px solid #d6362f;box-shadow:inset 0 0 0 6px #f7f5ef}
+  .demo-toggle{width:100%}
+  .demo-toggle.on{color:#1a1205;border-color:#d6362f;font-weight:700;text-shadow:0 1px 0 rgba(255,255,255,.6);background:repeating-linear-gradient(45deg,#d6362f 0 10px,#f7f5ef 10px 20px)}
+  .demo-toggle.on:hover{background:repeating-linear-gradient(45deg,#d6362f 0 10px,#f7f5ef 10px 20px)}
+  .demo-overlay{position:fixed;inset:0;z-index:100;display:none;align-items:center;justify-content:center;padding:20px;background:rgba(8,10,14,.72)}
+  .demo-overlay.open{display:flex}
+  .demo-modal{width:100%;max-width:440px;background:var(--panel);color:var(--panel-text);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .demo-modal .modal-stripe{height:16px}
+  .demo-modal-body{padding:22px 24px 24px}
+  .demo-modal-body h2{margin:0 0 10px;font-size:18px}
+  .demo-modal-body p{margin:0 0 12px;font-size:14px;line-height:1.5;color:var(--panel-text)}
+  .demo-modal-body .fine{font-size:12px;color:var(--panel-dim)}
+  .demo-modal-actions{display:flex;gap:10px;margin-top:18px}
+  .demo-modal-actions button{flex:1;padding:11px;border-radius:9px;font-size:12px;font-weight:800;cursor:pointer;border:1px solid transparent;text-transform:uppercase;letter-spacing:.03em}
+  .demo-modal-actions .m-go{background:#d6362f;color:#fff}
+  .demo-modal-actions .m-go:hover{background:#c02d27}
+  .demo-modal-actions .m-cancel{background:transparent;color:var(--panel-text);border-color:var(--line)}
+  .demo-modal-actions .m-cancel:hover{background:var(--panel-2)}
   .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:20;opacity:0;pointer-events:none;transition:opacity .12s ease}
   .modal-overlay.show{opacity:1;pointer-events:auto}
   .modal-box{position:relative;background:var(--panel);color:var(--panel-text);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.5);max-width:560px;width:90%;max-height:82vh;overflow-y:auto;padding:26px 28px}
@@ -144,6 +177,10 @@
       <div id="tooltip" class="tooltip"></div>
     </div>
     <aside class="panel">
+      <div id="demo-banner" class="demo-stripes">
+        <span class="demo-msg">🚧 Mode démo — rien n'est enregistré 🚧</span>
+        <button id="demo-quit" class="demo-quit">Quitter</button>
+      </div>
       <div class="brand">
         <a href="../"><b>Plan Vierge</b></a>
         <nav class="brand-nav">
@@ -159,7 +196,10 @@
       </div>
       <div id="msg" data-kind=""></div>
       <div class="row">
+        <button id="hint">Indice</button>
         <button id="idk">Je ne sais pas</button>
+      </div>
+      <div class="row">
         <button id="restart">Nouveau tour</button>
       </div>
       <button id="solution-toggle" data-on="0">Mode solution</button>
@@ -171,6 +211,7 @@
           <button type="button" data-tier="B">B</button>
         </div>
       </div>
+      <button id="demo-toggle" class="demo-toggle"><span>🚧 Mode démo</span></button>
       <div class="row nav-row">
         <button id="review-btn" class="nav-btn" disabled><span>À réviser</span><span class="badge-count">0</span></button>
         <button id="stats-btn" class="nav-btn"><span>Stats</span></button>
@@ -183,6 +224,23 @@
     <p>Cet outil est conçu pour un écran d’ordinateur (le survol à la souris est central). Ouvrez-le sur un laptop.</p>
     <a class="toosmall-home" href="../">← Retour à l’accueil</a>
   </div></div>
+  <div id="demo-overlay" class="demo-overlay">
+    <div class="demo-modal">
+      <div class="modal-stripe demo-stripes"></div>
+      <div class="demo-modal-body">
+        <h2>🚧 Activer le mode démo ?</h2>
+        <p>Idéal pour montrer l'outil à quelqu'un : vous pouvez jouer, réviser,
+          tout explorer — <b>rien n'est enregistré</b>. Votre progression et votre
+          planning de révision restent exactement comme maintenant.</p>
+        <p class="fine">Un cadre rayé rouge et blanc reste affiché tant que le mode
+          est actif. Cliquez « Quitter » pour retrouver vos données intactes.</p>
+        <div class="demo-modal-actions">
+          <button id="demo-go" class="m-go">Activer</button>
+          <button id="demo-cancel" class="m-cancel">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="modal-overlay" class="modal-overlay">
     <div class="modal-box" role="dialog" aria-modal="true">
       <button id="modal-close" class="modal-close" aria-label="Fermer">×</button>
@@ -267,7 +325,7 @@
     saveProgress(store);
     return store;
   }
-  function saveProgress(store) { Store.set(PROGRESS_KEY, JSON.stringify(store)); }
+  function saveProgress(store) { if (demoMode) return; Store.set(PROGRESS_KEY, JSON.stringify(store)); }
 
   function itemRecord(insee, name) {
     return (PROGRESS.items[insee] && PROGRESS.items[insee][name]) || null;
@@ -425,6 +483,66 @@
     const rings = geom.type === "Polygon" ? geom.coordinates : geom.coordinates.reduce((a, p) => a.concat(p), []);
     return rings.map(ringPath).join(" ");
   }
+  function multiLinePath(geom) {
+    const lines = geom.type === "MultiLineString" ? geom.coordinates : [geom.coordinates];
+    return lines.map(ls => ls.map((c, i) => { const p = project(c); return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join(" ")).join(" ");
+  }
+
+  // ---------- Quartiers administratifs (support de l'indice) ----------
+  // Polygones officiels (admin_level=10, extraits par le pipeline DATA_FEED) : invisibles
+  // au repos, un seul se surligne à l'« Indice » pour situer la cible sans la révéler.
+  let quartierPolys = [];        // [{ name, rawRings:[[lon,lat]...], projRings, els:[] }]
+  let quartierByName = {};
+  function buildQuartiers() {
+    quartierPolys = (DATA.quartiers || []).map(q => {
+      const rawRings = q.geometry.type === "Polygon" ? q.geometry.coordinates : q.geometry.coordinates.reduce((a, p) => a.concat(p), []);
+      return { name: q.name, rawRings, projRings: rawRings.map(r => r.map(project)), els: [] };
+    });
+    quartierByName = {};
+    quartierPolys.forEach(q => { quartierByName[q.name] = q; });
+  }
+  function quartierStrict(c) {            // quartier contenant strictement le point, ou null
+    for (const q of quartierPolys) for (const r of q.rawRings) if (pointInRing(c[0], c[1], r)) return q.name;
+    return null;
+  }
+  function segDistLL(p, a, b, kx) {
+    const ax = (a[0] - p[0]) * kx, ay = a[1] - p[1], bx = (b[0] - p[0]) * kx, by = b[1] - p[1];
+    const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+    const t = l2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+    return Math.hypot(ax + t * dx, ay + t * dy);
+  }
+  function quartierOfPointLL(c) {         // contenant, sinon le plus proche (bords / ponts sur l'eau)
+    const strict = quartierStrict(c);
+    if (strict) return strict;
+    if (!quartierPolys.length) return null;
+    const kx = Math.cos(c[1] * Math.PI / 180);
+    let best = null, bd = Infinity;
+    for (const q of quartierPolys) for (const r of q.rawRings)
+      for (let i = 1; i < r.length; i++) { const d = segDistLL(c, r[i - 1], r[i], kx); if (d < bd) { bd = d; best = q.name; } }
+    return best;
+  }
+  function axeQuartierLL(geom, center) {  // quartier détenant la plus grande longueur de la voie
+    const lines = geom.type === "MultiLineString" ? geom.coordinates : [geom.coordinates];
+    const tally = {};
+    for (const ls of lines) for (let i = 1; i < ls.length; i++) {
+      const a = ls[i - 1], b = ls[i], mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      const kx = Math.cos(mid[1] * Math.PI / 180);
+      const L = Math.hypot((b[0] - a[0]) * kx, b[1] - a[1]);
+      const name = quartierStrict(mid);
+      if (name) tally[name] = (tally[name] || 0) + L;
+    }
+    let best = null, bl = -1;
+    for (const k in tally) if (tally[k] > bl) { bl = tally[k]; best = k; }
+    return best || quartierOfPointLL(center);   // voie entièrement sur l'eau (ponts) → plus proche
+  }
+  function showQuartierHint(t) {
+    clearQuartierHint();
+    const q = quartierByName[t.quartier];
+    if (q) q.els.forEach(e => e.setAttribute("class", "quartier on"));
+  }
+  function clearQuartierHint() {
+    quartierPolys.forEach(q => q.els.forEach(e => e.setAttribute("class", "quartier")));
+  }
 
   // ---------- Géométrie de hit-test ----------
   function distPointSeg(px, py, ax, ay, bx, by) {
@@ -471,7 +589,7 @@
       });
       targets.push({
         kind: "axe", name: a.name, category: a.category, tier: a.tier,
-        polylines, segs, els: [],
+        quartier: axeQuartierLL(a.geometry, a.center), polylines, segs, els: [],
         dist(px, py) {
           let d = Infinity;
           for (const s of this.segs) d = Math.min(d, distPointSeg(px, py, s[0], s[1], s[2], s[3]));
@@ -486,7 +604,7 @@
         const rings = polyRings(p.geometry).map(r => r.map(project));
         targets.push({
           kind: "poi", name: p.name, category: p.category, tier: "A",
-          rings, center: c, els: [],
+          quartier: quartierOfPointLL(p.center), rings, center: c, els: [],
           dist(px, py) {
             for (const r of this.rings) if (pointInRing(px, py, r)) return 0;
             let d = Infinity;
@@ -498,7 +616,7 @@
         const r = Math.max(7, p.radius_m * pxPerMeter);
         targets.push({
           kind: "poi", name: p.name, category: p.category, tier: "A",
-          circle: { x: c[0], y: c[1], r }, center: c, els: [],
+          quartier: quartierOfPointLL(p.center), circle: { x: c[0], y: c[1], r }, center: c, els: [],
           dist(px, py) { return Math.max(0, Math.hypot(px - this.circle.x, py - this.circle.y) - this.circle.r); }
         });
       }
@@ -519,8 +637,19 @@
     const gFrame = el("g", {});
     if (DATA.contour) gFrame.appendChild(el("path", { d: polyPath(DATA.contour), class: "contour-fill" }));
     if (DATA.seine) gFrame.appendChild(el("path", { d: polyPath(DATA.seine), class: "seine", "fill-rule": "evenodd" }));
+    if (DATA.bievre) gFrame.appendChild(el("path", { d: multiLinePath(DATA.bievre), class: "bievre" }));
     if (DATA.contour) gFrame.appendChild(el("path", { d: polyPath(DATA.contour), class: "contour-line", "fill-rule": "evenodd" }));
     svg.appendChild(gFrame);
+    // Quartiers administratifs : sous les axes/POIs, invisibles jusqu'à l'indice.
+    const gQuartiers = el("g", {});
+    quartierPolys.forEach(q => {
+      q.els = [];
+      q.projRings.forEach(r => {
+        const pg = el("polygon", { points: r.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" "), class: "quartier" });
+        gQuartiers.appendChild(pg); q.els.push(pg);
+      });
+    });
+    svg.appendChild(gQuartiers);
     const gAxesB = el("g", {}), gAxesA = el("g", {}), gPoi = el("g", {}), gCircle = el("g", {});
     targets.forEach(t => {
       if (t.kind === "axe") {
@@ -553,9 +682,13 @@
   // ---------- État de jeu ----------
   let solutionMode = false;
   let solutionTier = "AB";        // filtre du mode solution : "A" | "AB" | "B" (revue de la séparation des paliers)
+  // Mode démo : gèle toute persistance le temps de montrer l'outil. Déclaré avant loadProgress()
+  // car saveProgress() le lit dès le chargement (migration/heal) — sinon erreur de zone morte (TDZ).
+  let demoMode = false, demoSnapshot = null;
   let PROGRESS = loadProgress();
   let queue = [], qi = 0, current = null, found = 0, totalRound = 0;
   let hi = [], busy = false;
+  let hinted = false;            // indice utilisé sur la question courante (note déjà verrouillée en erreur)
   let roundMistakes = [];        // cibles ratées ce tour-ci (retry impossible, comptent comme erreur)
   let roundMode = "training";    // "training" | "review" | "mistakes"
   let lastSummary = null;        // résumé figé du dernier tour terminé, pour la modale
@@ -585,6 +718,8 @@
   }
   function next() {
     clearHi();
+    hinted = false; clearQuartierHint();
+    const hb = document.getElementById("hint"); if (hb) hb.disabled = false;
     if (qi >= queue.length) { current = null; finishRound(); return; }
     current = queue[qi];
     if (!solutionMode) showPrompt(current);
@@ -859,15 +994,17 @@
     hi = cand;
     svg.style.cursor = cand.length ? "pointer" : "default";
   }
-  function terminalMiss(target, reason) {
+  function terminalMiss(target, reason, doGrade) {
     // Un clic faux ou "Je ne sais pas" met fin à la question pour ce tour : pas de retry,
     // ça compte comme une erreur (voir HANDOFF.md / requirement du tour terminé).
+    // doGrade === false : la note a déjà été posée (indice déjà utilisé) — on ne fait que révéler.
+    if (doGrade === undefined) doGrade = true;
     busy = true; clearHi();
-    applyGrade(currentInsee, target.name, "miss");
-    roundMistakes.push(target);
+    if (doGrade) { applyGrade(currentInsee, target.name, "miss"); roundMistakes.push(target); }
     target._sess = "err";
     setClass(target, "reveal");   // pulse rouge pour révéler l'emplacement, puis rouge fixe
     setMsg(reason === "idk" ? "C’était : " + target.name : "Raté. C’était : " + target.name, "err");
+    clearQuartierHint();
     updateCounters();
     const t = target;
     setTimeout(() => { setClass(t, sessionClassOf(t)); qi++; busy = false; hi = []; next(); }, 2200);
@@ -877,19 +1014,44 @@
     if (busy || !current || !hi.length) return;
     if (hi.indexOf(current) >= 0) {
       busy = true;
-      found++; applyGrade(currentInsee, current.name, "clean");
-      current._sess = "ok";
-      hi.forEach(t => { if (t !== current) setClass(t, sessionClassOf(t)); });
-      setClass(current, "ok"); setMsg("Trouvé.", "ok"); updateCounters();
-      const cur = current;
-      setTimeout(() => { setClass(cur, sessionClassOf(cur)); qi++; busy = false; hi = []; next(); }, 480);
+      if (hinted) {
+        // Indice déjà utilisé : la question est déjà comptée comme erreur. Le bon clic
+        // ne fait que confirmer le repérage — pas de « trouvé », la cible se fige en rouge.
+        current._sess = "err";
+        hi.forEach(t => { if (t !== current) setClass(t, sessionClassOf(t)); });
+        setClass(current, "ok");   // bref vert de confirmation, puis rouge (erreur) via sessionClassOf
+        setMsg("Bien situé — mais l’indice compte comme une erreur.", "hint");
+        clearQuartierHint();
+        const cur = current;
+        setTimeout(() => { setClass(cur, sessionClassOf(cur)); qi++; busy = false; hi = []; next(); }, 750);
+      } else {
+        found++; applyGrade(currentInsee, current.name, "clean");
+        current._sess = "ok";
+        hi.forEach(t => { if (t !== current) setClass(t, sessionClassOf(t)); });
+        setClass(current, "ok"); setMsg("Trouvé.", "ok"); updateCounters();
+        const cur = current;
+        setTimeout(() => { setClass(cur, sessionClassOf(cur)); qi++; busy = false; hi = []; next(); }, 480);
+      }
     } else {
-      terminalMiss(current, "wrong");
+      terminalMiss(current, "wrong", !hinted);
     }
   }
   function onIDK() {
     if (solutionMode || busy || !current) return;
-    terminalMiss(current, "idk");
+    terminalMiss(current, "idk", !hinted);
+  }
+  function onHint() {
+    // Surligne le quartier administratif contenant la cible, sans la révéler. Compte comme
+    // une erreur (note verrouillée en « miss »), mais on laisse quand même situer la cible.
+    if (solutionMode || busy || !current || hinted) return;
+    if (!current.quartier) return;                 // pas de donnée quartier → pas d'indice
+    hinted = true;
+    document.getElementById("hint").disabled = true;
+    applyGrade(currentInsee, current.name, "miss");
+    roundMistakes.push(current);
+    showQuartierHint(current);
+    setMsg("Indice — quartier : " + current.quartier + ". À vous de situer la cible.", "hint");
+    updateCounters();
   }
   function applyTierFilter() {
     // Le filtre palier n'agit qu'en mode solution ; hors mode solution tout le réseau est affiché.
@@ -913,6 +1075,34 @@
     } else {
       showPrompt(null);
     }
+  }
+
+  // ---------- Mode démo (gèle la progression le temps de montrer l'outil) ----------
+  function openDemoModal() { document.getElementById("demo-overlay").classList.add("open"); }
+  function closeDemoModal() { document.getElementById("demo-overlay").classList.remove("open"); }
+  function toggleDemo() { demoMode ? exitDemo() : openDemoModal(); }
+  function enterDemo() {
+    closeDemoModal();
+    if (demoMode) return;
+    demoSnapshot = JSON.stringify(PROGRESS);   // instantané AVANT de geler les écritures
+    demoMode = true;
+    document.body.classList.add("demo-on");
+    updateDemoBtn();
+  }
+  function exitDemo() {
+    if (!demoMode) return;
+    demoMode = false;                          // dégèle les écritures d'abord…
+    if (demoSnapshot) { try { PROGRESS = JSON.parse(demoSnapshot); } catch (e) { /* garde l'état courant si l'instantané est corrompu */ } demoSnapshot = null; }
+    document.body.classList.remove("demo-on");
+    updateDemoBtn();
+    updateCounters();                          // rafraîchit barres + badge « à réviser » depuis la progression restaurée
+    if (modalView) renderModal();
+  }
+  function updateDemoBtn() {
+    const b = document.getElementById("demo-toggle");
+    if (!b) return;
+    b.classList.toggle("on", demoMode);
+    b.querySelector("span").textContent = demoMode ? "🚧 Démo active" : "🚧 Mode démo";
   }
 
   // ---------- Compteurs ----------
@@ -958,7 +1148,7 @@
       DATA = data;
       document.title = "Plan Vierge — " + meta.label + " arrondissement";
       document.querySelector(".map-wrap").dataset.arr = meta.label;
-      setupProjection(); buildTargets(); renderSVG();
+      setupProjection(); buildQuartiers(); buildTargets(); renderSVG();
       arrNames(insee, function () {});   // purge les enregistrements résiduels de cet arrondissement
       startRound();
     });
@@ -975,7 +1165,13 @@
       clearHi(); hi = []; hideTooltip(); svg.style.cursor = "default";
     });
     document.getElementById("idk").addEventListener("click", onIDK);
+    document.getElementById("hint").addEventListener("click", onHint);
     document.getElementById("restart").addEventListener("click", function () { startRound(); });
+    document.getElementById("demo-toggle").addEventListener("click", toggleDemo);
+    document.getElementById("demo-quit").addEventListener("click", exitDemo);
+    document.getElementById("demo-go").addEventListener("click", enterDemo);
+    document.getElementById("demo-cancel").addEventListener("click", closeDemoModal);
+    document.getElementById("demo-overlay").addEventListener("click", function (e) { if (e.target === this) closeDemoModal(); });
     document.getElementById("solution-toggle").addEventListener("click", function () { setSolutionMode(!solutionMode); });
     document.querySelectorAll("#tier-filter .tf-seg button").forEach(function (b) {
       b.addEventListener("click", function () {
@@ -990,7 +1186,11 @@
     document.getElementById("history-btn").addEventListener("click", function () { openModal("history"); });
     document.getElementById("modal-close").addEventListener("click", closeModal);
     document.getElementById("modal-overlay").addEventListener("click", function (e) { if (e.target === this) closeModal(); });
-    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && modalView) closeModal(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      if (document.getElementById("demo-overlay").classList.contains("open")) { closeDemoModal(); return; }
+      if (modalView) closeModal();
+    });
     populateSelector();
     selectArrondissement(ARRONDISSEMENTS[0].insee);
   }
