@@ -356,6 +356,19 @@
   .feedback.bad{ color: var(--bad); }
   .feedback.hint{ color: var(--muted); }
 
+  /* "Groupes" view (runs of consecutive non-hub stations) */
+  .grp-map{ margin:10px 0 14px; }
+  .grp-track{ display:flex; align-items:flex-start; gap:8px; flex-wrap:wrap; justify-content:center; margin-bottom:14px; }
+  .grp-node{ display:flex; flex-direction:column; align-items:center; gap:5px; max-width:110px; }
+  .grp-node .lbl{ font-size:12px; font-weight:700; text-align:center; line-height:1.15; }
+  .grp-anchor .lbl{ color:var(--muted); }
+  .grp-slot{ min-width:30px; padding:6px 9px; border-radius:8px; border:2px dashed #c4bda9; font-weight:800; color:var(--muted); background:#fff; }
+  .grp-slot.active{ border-style:solid; border-color:#14140f; color:#14140f; box-shadow:0 0 0 4px rgba(0,0,0,0.06); }
+  .grp-slot.ok{ border-style:solid; border-color:var(--ok); color:var(--ok); background:rgba(47,143,91,0.10); }
+  .grp-slot.bad{ border-style:solid; border-color:var(--bad); color:var(--bad); background:rgba(193,69,58,0.09); }
+  .grp-arrow{ color:#c4bda9; font-size:16px; align-self:center; }
+  .grp-cap{ font-size:11px; color:var(--muted); font-style:italic; align-self:center; white-space:nowrap; }
+
   /* word bank for melange mode */
   .bank-filter{
     width:100%; padding:10px 12px; font-size:14px; border-radius:6px; margin-top:8px;
@@ -1061,6 +1074,7 @@ function setScope(sc){
   state.scope = sc;
   if(!demoMode){ try{ localStorage.setItem(SCOPE_LS_KEY, sc); }catch(e){ /* no-op if blocked */ } }
   resetLine();   // the active station set changed → rebuild the current session
+  if(state.view === "groupes") startGroupes();  // group set is scope-specific
   render();
 }
 
@@ -1489,6 +1503,7 @@ function setMode(m){
 function goView(v){
   state.view = v;
   if(v === "review") startReview();
+  if(v === "groupes") startGroupes();
   render();
 }
 
@@ -1608,6 +1623,152 @@ function reviewAdvance(){
   render();
 }
 
+/* ---------- "Groupes" view: drilling runs of consecutive non-hub stations ----------
+   A run of stations that carry no correspondence (s.c.length===0) is exactly the kind
+   that's hardest to retain, having no interchange to anchor it. We present each run
+   framed by the hubs (or line ends) that bound it: those anchors are revealed, and the
+   user names the run's stations in order. Grades feed the 'name' Leitner channel, same
+   as "je nomme" / review, so misses resurface in "À réviser". Cross-line, shuffled. */
+
+// split a run longer than 4 into balanced sub-groups of ~3 (never a sub-group of 1):
+// 5→3+2, 6→3+3, 7→3+2+2, 9→3+3+3. Runs of 2–4 pass through whole.
+function chunkRun(run){
+  if(run.length <= 4) return [run];
+  const k = Math.ceil(run.length / 3), base = Math.floor(run.length / k), extra = run.length % k;
+  const parts = []; let i = 0;
+  for(let p=0; p<k; p++){ const size = base + (p<extra?1:0); parts.push(run.slice(i, i+size)); i += size; }
+  return parts;
+}
+// build every group-card for a scope. Runs are detected on each physical chain
+// (lineMapSegments already concatenates trunk+branch / loop arcs correctly). An anchor
+// is the bounding station in the same chain, dropped to null (→ "bout de ligne") when
+// it's absent or out-of-scope. Cards are deduped by (line, station set) so a trunk run
+// shared by two fork chains isn't emitted twice.
+function buildGroupCards(scope){
+  const cards = [], seen = new Set();
+  const excl = (lk,n) => scope === 'intramuros' && isExcluded(lk, n);
+  LINE_ORDER.forEach(lk => {
+    // a station already carded on this line breaks a later run but can still be its
+    // anchor — so a loop junction shared by two chains (e.g. 7bis Botzaris) is asked
+    // once, then frames the far arc instead of being drilled again.
+    const used = new Set();
+    const runnable = st => (st.c||[]).length === 0 && !excl(lk, st.n) && !used.has(st.n);
+    lineMapSegments(lk).forEach((chain, ci) => {
+      let i = 0;
+      while(i < chain.length){
+        const s = chain[i];
+        if(runnable(s)){
+          let j = i;
+          while(j < chain.length && runnable(chain[j])) j++;
+          const run = chain.slice(i, j);        // maximal non-hub run [i, j-1]
+          if(run.length >= 2){
+            let off = i;
+            chunkRun(run).forEach(chunk => {
+              const startIdx = off, endIdx = off + chunk.length - 1;
+              const beforeIdx = startIdx - 1, afterIdx = endIdx + 1;
+              const anchorOf = idx => {
+                if(idx < 0 || idx >= chain.length) return null;
+                const st = chain[idx];
+                if(scope === 'intramuros' && isExcluded(lk, st.n)) return null;
+                return {n: st.n, c: st.c || []};
+              };
+              const anchorBefore = anchorOf(beforeIdx), anchorAfter = anchorOf(afterIdx);
+              const key = lk + '::' + chunk.map(s=>s.n).join('|');
+              if(!seen.has(key)){
+                seen.add(key);
+                chunk.forEach(s => used.add(s.n));
+                cards.push({
+                  line: lk, chain: ci,
+                  i0: anchorBefore ? beforeIdx : startIdx,  // colored map segment spans anchor→run→anchor
+                  i1: anchorAfter ? afterIdx : endIdx,
+                  stations: chunk.map(s=>s.n),
+                  anchorBefore, anchorAfter
+                });
+              }
+              off += chunk.length;
+            });
+          }
+          i = j;
+        } else i++;
+      }
+    });
+  });
+  return cards;
+}
+// static per-scope cache (LINES/GEO never change at runtime)
+let _grpCache = {};
+function groupCards(scope){ return _grpCache[scope] || (_grpCache[scope] = buildGroupCards(scope)); }
+
+function startGroupes(){
+  const cards = groupCards(state.scope);
+  state.grp = { queue: shuffle(cards), pos: 0, phase: cards.length ? 'card' : 'empty', results: [] };
+  grpInitCard();
+}
+function grpInitCard(){
+  const g = state.grp, c = g.queue[g.pos];
+  if(!c) return;
+  g.slot = 0;
+  g.cardDone = false;
+  g.cardState = c.stations.map(()=>({status: null, wrong: 0, hintUsed: false})); // status: 'ok' | 'revealed'
+}
+function grpCurrent(){ const g = state.grp; return (g && g.queue[g.pos]) || null; }
+// auto-validate the active slot once enough has been typed (mirrors reviewInput)
+function grpInput(){
+  const c = grpCurrent(); if(!c) return;
+  const inp = document.getElementById("grpInput"); if(!inp) return;
+  const name = c.stations[state.grp.slot];
+  if(normalize(inp.value).length < normalize(name).length) return;
+  if(matchesStation(inp.value, name)) grpResolveSlot('ok');
+}
+function grpSubmit(){
+  const c = grpCurrent(); if(!c) return;
+  const g = state.grp, name = c.stations[g.slot];
+  const inp = document.getElementById("grpInput");
+  if(matchesStation(inp.value, name)){ grpResolveSlot('ok'); return; }
+  if(normalize(inp.value).length > 0) g.cardState[g.slot].wrong++;
+  const fb = document.getElementById("grpFb");
+  if(fb){ fb.textContent = normalize(inp.value).length>0 ? "✗ Incorrect — réessaie." : "Tape un nom de station."; fb.className = "feedback bad"; }
+  inp.focus(); inp.select();
+}
+function grpHint(){
+  const c = grpCurrent(); if(!c) return;
+  const cs = state.grp.cardState[state.grp.slot];
+  if(!cs.hintUsed){ cs.hintUsed = true; cs.wrong++; }   // using the hint counts as a miss
+  const fb = document.getElementById("grpFb");
+  if(fb){ fb.textContent = `Indice : ${hintFor(c.stations[state.grp.slot])}`; fb.className = "feedback hint"; }
+  const inp = document.getElementById("grpInput"); if(inp) inp.focus();
+}
+function grpSkip(){ grpResolveSlot('revealed'); }
+// resolve the active slot: grade the 'name' channel (clean only if first try, else miss —
+// same rule as recordStation / reviewAccept), record it, advance to the next slot or finish the card
+function grpResolveSlot(status){
+  const g = state.grp, c = g.queue[g.pos], i = g.slot, cs = g.cardState[i];
+  cs.status = status;
+  const name = c.stations[i], revealed = status === 'revealed';
+  const firstTry = status === 'ok' && cs.wrong === 0;
+  applyGrade(c.line, name, firstTry ? 'clean' : 'miss', 'name', cs.wrong + (revealed ? 1 : 0));
+  g.results.push({line: c.line, name, wrong: cs.wrong, revealed, correct: status === 'ok'});
+  if(g.slot < c.stations.length - 1) g.slot++; else g.cardDone = true;
+  render();
+}
+function grpNext(){
+  const g = state.grp;
+  g.pos++;
+  if(g.pos >= g.queue.length) grpFinish(); else grpInitCard();
+  render();
+}
+function grpFinish(){
+  const r = state.grp.results, total = r.length;
+  const firstTry = r.filter(x=>x.correct && x.wrong===0).length;
+  const withErrors = r.filter(x=>x.correct && x.wrong>0).length;
+  const revealed = r.filter(x=>x.revealed).length;
+  const totalWrong = r.reduce((a,x)=>a+x.wrong,0);
+  const pct = total ? Math.round(100*(firstTry + 0.5*withErrors)/total) : 0;
+  logGame({ts:Date.now(), kind:"groupes", line:"—", mode:"groupes", total, firstTry, withErrors, revealed, totalWrong, pct});
+  state.grp.phase = "done";
+  state.grp.summary = {total, firstTry, withErrors, revealed, totalWrong, pct, cards: state.grp.queue.length};
+}
+
 // display order for the line-selector badges: bis lines sit right after their
 // parent line (3, 3bis, 4...), unlike Object.keys(LINES) which — since JS
 // always iterates integer-like string keys in numeric order first — would
@@ -1678,6 +1839,7 @@ function renderNav(){
   nav.innerHTML =
     `<button class="nav-btn ${state.view==='train'?'active':''}" onclick="goView('train')">Entraînement</button>` +
     `<button class="nav-btn review ${state.view==='review'?'active':''}" ${dueCount===0?'disabled':''} onclick="goView('review')">À réviser · ${dueCount}</button>` +
+    `<button class="nav-btn ${state.view==='groupes'?'active':''}" title="S'entraîner sur les suites de stations sans correspondance, groupe par groupe, avec repère géographique." onclick="goView('groupes')">Groupes · ${groupCards(state.scope).length}</button>` +
     `<button class="nav-btn ${state.view==='stats'?'active':''}" onclick="goView('stats')">Stats</button>` +
     `<button class="nav-btn ${state.view==='history'?'active':''}" onclick="goView('history')">Historique</button>` +
     `<button class="nav-btn ${state.view==='solutions'?'active':''}" onclick="goView('solutions')">Solutions</button>` +
@@ -2019,6 +2181,7 @@ function render(){
 
   // route to the active view
   if(state.view === "review"){ chrome.style.display = "none"; renderReview(panel, note); return; }
+  if(state.view === "groupes"){ chrome.style.display = "none"; renderGroupes(panel, note); return; }
   if(state.view === "history"){ chrome.style.display = "none"; renderHistory(panel, note); return; }
   if(state.view === "stats"){ chrome.style.display = "none"; renderStats(panel, note); return; }
   if(state.view === "solutions"){
@@ -2516,6 +2679,144 @@ function renderReview(panel, note){
     inp.addEventListener("input", reviewInput);
   }
 }
+/* ---------- "Groupes" view rendering ---------- */
+// SVG polyline through a chain's stations (skips any without coordinates)
+function chainPath(chain){
+  let d = "", started = false;
+  chain.forEach(st => {
+    const p = GEO.stations[st.n]; if(!p) return;
+    const [x,y] = MAP.project(p[0], p[1]);
+    d += (started ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+    started = true;
+  });
+  return d.trim();
+}
+// mini Paris map for a group-card: faint arrondissement outline + the WHOLE line in
+// neutral grey, then the card's segment (anchor→run→anchor) in the line colour with a
+// dot on each station to name. viewBox = Paris frame, expanded to always contain the
+// highlighted segment (so far-suburban groups in "Complet" stay on-canvas).
+function buildGroupMapSvg(card){
+  const L = LINES[card.line];
+  const chains = lineMapSegments(card.line);
+  const chain = chains[card.chain];
+  const sub = chain.slice(card.i0, card.i1 + 1);
+  const pb = MAP.parisBox;
+  let minx = pb.x, miny = pb.y, maxx = pb.x + pb.w, maxy = pb.y + pb.h;
+  sub.forEach(st => {
+    const p = GEO.stations[st.n]; if(!p) return;
+    const [x,y] = MAP.project(p[0], p[1]);
+    minx = Math.min(minx,x); miny = Math.min(miny,y); maxx = Math.max(maxx,x); maxy = Math.max(maxy,y);
+  });
+  const pad = 12;
+  const vb = {x: minx - pad, y: miny - pad, w: (maxx - minx) + 2*pad, h: (maxy - miny) + 2*pad};
+  let s = `<svg viewBox="${_f(vb.x)} ${_f(vb.y)} ${_f(vb.w)} ${_f(vb.h)}" style="width:100%;max-height:320px;height:auto;display:block;background:#f3f1e8;border-radius:8px">`;
+  s += `<g style="pointer-events:none">` + GEO.water.map(r=>`<path d="${ringPath(r)}" fill="#cfe0ee" stroke="none"/>`).join('') + `</g>`;
+  s += `<g style="pointer-events:none" fill="none" stroke="#d9d3c2" stroke-width="1">` + GEO.arr.map(a=>`<path d="${ringPath(a.ring)}"/>`).join('') + `</g>`;
+  // whole line, neutral grey
+  s += `<g style="pointer-events:none" fill="none" stroke="#b7b1a2" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">`
+     + chains.map(ch=>`<path d="${chainPath(ch)}"/>`).join('') + `</g>`;
+  // card segment in line colour
+  s += `<path d="${chainPath(sub)}" fill="none" stroke="${L.color}" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  // anchors (hollow) then run stations (filled) on top
+  s += `<g style="pointer-events:none">`;
+  [card.anchorBefore, card.anchorAfter].forEach(a => {
+    if(!a) return; const p = GEO.stations[a.n]; if(!p) return;
+    const [x,y] = MAP.project(p[0], p[1]);
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.6" fill="#fff" stroke="#14140f" stroke-width="1.8"/>`;
+  });
+  card.stations.forEach(n => {
+    const p = GEO.stations[n]; if(!p) return;
+    const [x,y] = MAP.project(p[0], p[1]);
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.2" fill="${L.color}" stroke="#fff" stroke-width="1.6"/>`;
+  });
+  s += `</g></svg>`;
+  return s;
+}
+// one node on the anchor→slots→anchor track
+function grpAnchorNode(anchor){
+  if(!anchor) return `<div class="grp-node grp-anchor"><span class="grp-cap">↦ bout de ligne</span></div>`;
+  const chips = anchor.c.length ? corrChipsHtml(anchor.c) : "";
+  return `<div class="grp-node grp-anchor"><div class="lbl">${escapeHtml(anchor.n)}</div>${chips}</div>`;
+}
+function renderGroupes(panel, note){
+  const g = state.grp;
+  const backTrain = `<button class="btn btn-secondary" onclick="goView('train')">Entraînement</button>`;
+  if(!g || g.phase === "empty"){
+    panel.innerHTML = `<div class="done-screen">
+      <div class="big" style="font-size:22px">Aucun groupe dans ce périmètre</div>
+      <div style="color:var(--muted);font-size:14px;margin-top:8px">Un « groupe » est une suite de 2 stations ou plus sans correspondance. ${state.scope==='intramuros'?'Essaie le périmètre « Complet ».':''}</div>
+      <div style="margin-top:18px">${backTrain}</div>
+    </div>`;
+    note.textContent = "";
+    return;
+  }
+  if(g.phase === "done"){
+    const s = g.summary;
+    const row = (label, val) => `<div style="display:flex;justify-content:space-between;max-width:340px;margin:0 auto;padding:5px 0;border-bottom:1px solid #e4e0d3;font-size:14px"><span style="color:var(--muted)">${label}</span><b>${val}</b></div>`;
+    panel.innerHTML = `<div class="done-screen">
+      <div style="text-transform:uppercase;letter-spacing:0.1em;font-size:12px;color:var(--muted);font-weight:700">Groupes terminés</div>
+      <div class="big">${s.pct}<span style="font-size:18px;color:var(--muted)">%</span></div>
+      <div style="margin-top:14px">
+        ${row("Du premier coup", `${s.firstTry} / ${s.total}`)}
+        ${row("Après erreur(s)", s.withErrors)}
+        ${row("Révélées (Je ne sais pas)", s.revealed)}
+        ${row("Groupes parcourus", s.cards)}
+      </div>
+      <div style="margin-top:16px;display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-primary" onclick="startGroupes();render()">Relancer</button>${backTrain}
+      </div>
+    </div>`;
+    note.textContent = "";
+    return;
+  }
+  // active card
+  const c = grpCurrent(), total = g.queue.length;
+  // anchor → slots → anchor track
+  const slots = c.stations.map((name, i) => {
+    const cs = g.cardState[i];
+    if(i < g.slot || (g.cardDone && cs.status)){
+      const cls = cs.status === 'ok' ? 'ok' : 'bad';
+      return `<div class="grp-node"><div class="grp-slot ${cls}">${escapeHtml(name)}</div></div>`;
+    }
+    const active = i === g.slot && !g.cardDone;
+    return `<div class="grp-node"><div class="grp-slot ${active?'active':''}">?</div></div>`;
+  });
+  const arrow = `<span class="grp-arrow">→</span>`;
+  const track = [grpAnchorNode(c.anchorBefore), ...slots, grpAnchorNode(c.anchorAfter)].join(arrow);
+
+  let qcardInner;
+  if(g.cardDone){
+    const allClean = g.cardState.every(cs => cs.status === 'ok' && cs.wrong === 0);
+    qcardInner = `<div class="feedback ${allClean?'ok':'hint'}" style="font-size:15px">${allClean?'✓ Groupe complété sans faute':'Groupe complété'}</div>
+      <div class="row-btn"><button class="btn btn-primary" onclick="grpNext()">${g.pos+1>=total?'Voir le résultat':'Groupe suivant →'}</button></div>`;
+  } else {
+    qcardInner = `<div class="qlabel">Station ${g.slot+1} / ${c.stations.length} du groupe — nomme-la</div>
+      <input type="text" id="grpInput" placeholder="Tape le nom de la station" autocomplete="off" autocapitalize="off">
+      <div class="row-btn">
+        <button class="btn btn-primary" onclick="grpSubmit()">Valider</button>
+        <button class="btn btn-secondary" onclick="grpHint()">Indice</button>
+        <button class="btn btn-secondary" onclick="grpSkip()">Je ne sais pas</button>
+      </div>
+      <div id="grpFb" class="feedback"></div>`;
+  }
+  panel.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      ${lineBadge(c.line)}
+      <span style="font-weight:800;text-transform:uppercase;font-size:12px;letter-spacing:0.05em">${escapeHtml(LINES[c.line].name)}</span>
+      <span style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:700">Groupe ${g.pos+1} / ${total}</span>
+    </div>
+    <div class="grp-map">${buildGroupMapSvg(c)}</div>
+    <div class="grp-track">${track}</div>
+    <div class="qcard">${qcardInner}</div>`;
+  note.textContent = g.cardDone ? "" : "Nomme les stations surlignées dans l'ordre ; validation auto, fautes de frappe tolérées.";
+  if(!g.cardDone){
+    const inp = document.getElementById("grpInput");
+    inp.focus();
+    inp.addEventListener("keydown", e=>{ if(e.key==="Enter") grpSubmit(); });
+    inp.addEventListener("input", grpInput);
+  }
+}
+
 // map svg for review: same as buildMapSvg but wired to the review click handler
 function buildMapSvgRev(opts){
   return buildMapSvg(opts).replace('onclick="onMapClick(event)"', 'onclick="onRevMapClick(event)"');
@@ -2538,9 +2839,11 @@ function renderHistory(panel, note){
   const rows = games.map(g=>{
     const where = g.kind==="review"
       ? `<span class="line-badge" style="background:#E8A33D;color:#1a1205">R</span> Révision`
+      : g.kind==="groupes"
+      ? `<span class="line-badge" style="background:#14140f;color:#fff">G</span> Groupes`
       : `${lineBadge(g.line)} ${escapeHtml(LINES[g.line]?LINES[g.line].name:('Ligne '+g.line))}`;
     let meta;
-    if(g.kind==="review"){
+    if(g.kind==="review" || g.kind==="groupes"){
       meta = `${escapeHtml(g.mode)} · premier coup ${escapeHtml(g.firstTry)}/${escapeHtml(g.total)} · ${escapeHtml(g.totalWrong)} ratés`;
     } else if(g.kind==="carte"){
       meta = `carte · écart moyen ${g.avgDist!=null?escapeHtml(g.avgDist)+' m':'—'} · excellent ${escapeHtml(g.firstTry)}/${escapeHtml(g.total)}`;
