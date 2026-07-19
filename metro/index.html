@@ -364,6 +364,8 @@
   .grp-anchor .lbl{ color:var(--muted); }
   .grp-slot{ min-width:30px; padding:6px 9px; border-radius:8px; border:2px dashed #c4bda9; font-weight:800; color:var(--muted); background:#fff; }
   .grp-slot.active{ border-style:solid; border-color:#14140f; color:#14140f; box-shadow:0 0 0 4px rgba(0,0,0,0.06); }
+  .grp-slot.pick{ cursor:pointer; }
+  .grp-slot.pick:hover{ border-color:#14140f; color:#14140f; }
   .grp-slot.ok{ border-style:solid; border-color:var(--ok); color:var(--ok); background:rgba(47,143,91,0.10); }
   .grp-slot.bad{ border-style:solid; border-color:var(--bad); color:var(--bad); background:rgba(193,69,58,0.09); }
   .grp-arrow{ color:#c4bda9; font-size:16px; align-self:center; }
@@ -1447,7 +1449,19 @@ function matchesStation(guess, target){
 
 // "Indice" button text: first letter + a fixed, length-independent placeholder —
 // never reveals how long the actual name is, just confirms its first letter.
+// Exception for names opening on an article (Le / La / Les / L') : an article on its
+// own is no help, so we reveal the article AND the first letter of the word after it
+// (« Le Peletier » → « Le P — — », « L'… » → « L'X — — »). The trailing space (or the
+// apostrophe for L') distinguishes a real article from a name that merely starts with
+// those letters (Ledru-Rollin, Laumière → plain first-letter hint).
 function hintFor(name){
+  const m = name.match(/^(l['’]|(?:les|le|la)\s+)/i);
+  if(m){
+    const art = m[0].trimEnd();                       // "Le" / "La" / "Les" / "L'" (original casing)
+    const rest = name.slice(m[0].length);
+    const glue = /['’]$/.test(art) ? "" : " ";
+    return art + glue + rest.charAt(0) + " — —";
+  }
   return name.charAt(0) + " — —";
 }
 
@@ -1707,11 +1721,37 @@ function startGroupes(){
 function grpInitCard(){
   const g = state.grp, c = g.queue[g.pos];
   if(!c) return;
-  g.slot = 0;
   g.cardDone = false;
   g.cardState = c.stations.map(()=>({status: null, wrong: 0, hintUsed: false})); // status: 'ok' | 'revealed'
+  // random query direction: +1 follows the chain order (anchorBefore → anchorAfter),
+  // -1 reverses it, so a group is drilled both ways over sessions instead of memorised
+  // as a fixed one-way sequence. Defines the default order; the user can still pick freely.
+  g.dir = Math.random() < 0.5 ? -1 : 1;
+  grpAdvance();                                  // sets g.slot to the first slot in query order
 }
 function grpCurrent(){ const g = state.grp; return (g && g.queue[g.pos]) || null; }
+// slot indices in the current query direction (chain order, reversed when g.dir < 0)
+function grpQueryOrder(){
+  const n = grpCurrent().stations.length;
+  const idx = Array.from({length: n}, (_, i) => i);
+  return state.grp.dir < 0 ? idx.reverse() : idx;
+}
+// move the active slot to the next still-unanswered station in query order; finish the card
+// when none remain. Free selection (grpPick) can jump ahead, this resumes the default flow.
+function grpAdvance(){
+  const g = state.grp;
+  const next = grpQueryOrder().find(i => g.cardState[i].status === null);
+  if(next === undefined){ g.cardDone = true; g.slot = null; }
+  else g.slot = next;
+}
+// free selection: focus any still-masked slot to answer it out of order
+function grpPick(i){
+  const g = state.grp;
+  if(!g || g.cardDone || !g.cardState[i] || g.cardState[i].status !== null) return;
+  g.slot = i;
+  render();
+  const inp = document.getElementById("grpInput"); if(inp) inp.focus();
+}
 // auto-validate the active slot once enough has been typed (mirrors reviewInput)
 function grpInput(){
   const c = grpCurrent(); if(!c) return;
@@ -1748,7 +1788,7 @@ function grpResolveSlot(status){
   const firstTry = status === 'ok' && cs.wrong === 0;
   applyGrade(c.line, name, firstTry ? 'clean' : 'miss', 'name', cs.wrong + (revealed ? 1 : 0));
   g.results.push({line: c.line, name, wrong: cs.wrong, revealed, correct: status === 'ok'});
-  if(g.slot < c.stations.length - 1) g.slot++; else g.cardDone = true;
+  grpAdvance();
   render();
 }
 function grpNext(){
@@ -2695,11 +2735,29 @@ function chainPath(chain){
 // neutral grey, then the card's segment (anchor→run→anchor) in the line colour with a
 // dot on each station to name. viewBox = Paris frame, expanded to always contain the
 // highlighted segment (so far-suburban groups in "Complet" stay on-canvas).
-function buildGroupMapSvg(card){
+// small arrowhead (white-outlined triangle) at ~55% along a projected polyline `pts`,
+// pointing forward along it — used to show the current query direction on the segment.
+function svgDirArrow(pts, color){
+  if(pts.length < 2) return "";
+  const segs = []; let total = 0;
+  for(let k=1;k<pts.length;k++){
+    const dx = pts[k][0]-pts[k-1][0], dy = pts[k][1]-pts[k-1][1], len = Math.hypot(dx,dy);
+    segs.push({len, a: pts[k-1], b: pts[k]}); total += len;
+  }
+  if(total === 0) return "";
+  let target = total * 0.55, acc = 0, seg = segs[segs.length-1], t = 1;
+  for(const s of segs){ if(acc + s.len >= target){ seg = s; t = (target - acc) / s.len; break; } acc += s.len; }
+  const px = seg.a[0] + (seg.b[0]-seg.a[0])*t, py = seg.a[1] + (seg.b[1]-seg.a[1])*t;
+  const ang = Math.atan2(seg.b[1]-seg.a[1], seg.b[0]-seg.a[0]), r = 7;
+  const pt = (da) => `${_f(px+Math.cos(ang+da)*r)},${_f(py+Math.sin(ang+da)*r)}`;
+  return `<polygon points="${pt(0)} ${pt(2.5)} ${pt(-2.5)}" fill="${color}" stroke="#fff" stroke-width="1.2"/>`;
+}
+function buildGroupMapSvg(card, g){
   const L = LINES[card.line];
   const chains = lineMapSegments(card.line);
   const chain = chains[card.chain];
   const sub = chain.slice(card.i0, card.i1 + 1);
+  const activeName = (g && g.slot != null && !g.cardDone) ? card.stations[g.slot] : null;
   const pb = MAP.parisBox;
   let minx = pb.x, miny = pb.y, maxx = pb.x + pb.w, maxy = pb.y + pb.h;
   sub.forEach(st => {
@@ -2729,14 +2787,31 @@ function buildGroupMapSvg(card){
     const [x,y] = MAP.project(p[0], p[1]);
     s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.2" fill="${L.color}" stroke="#fff" stroke-width="1.6"/>`;
   });
+  // active station: larger dot + dark ring, drawn on top of the run dots
+  if(activeName){
+    const p = GEO.stations[activeName];
+    if(p){
+      const [x,y] = MAP.project(p[0], p[1]);
+      s += `<circle cx="${_f(x)}" cy="${_f(y)}" r="6" fill="${L.color}" stroke="#14140f" stroke-width="2.4"/>`;
+      s += `<circle cx="${_f(x)}" cy="${_f(y)}" r="9.5" fill="none" stroke="#14140f" stroke-width="1.2" opacity="0.45"/>`;
+    }
+  }
+  // direction arrow: sub points in query order (reversed when g.dir < 0)
+  if(g){
+    let pts = sub.map(st => GEO.stations[st.n]).filter(Boolean).map(p => MAP.project(p[0], p[1]));
+    if(g.dir < 0) pts = pts.reverse();
+    s += svgDirArrow(pts, "#14140f");
+  }
   s += `</g></svg>`;
   return s;
 }
 // one node on the anchor→slots→anchor track
-function grpAnchorNode(anchor){
+function grpAnchorNode(anchor, lineKey){
   if(!anchor) return `<div class="grp-node grp-anchor"><span class="grp-cap">↦ bout de ligne</span></div>`;
-  const chips = anchor.c.length ? corrChipsHtml(anchor.c) : "";
-  return `<div class="grp-node grp-anchor"><div class="lbl">${escapeHtml(anchor.n)}</div>${chips}</div>`;
+  // show the worked line first, then the anchor's interchanges (a station's `c` lists the
+  // OTHER lines), so the badge row makes the current line legible at a glance: « Belleville (2, 11) ».
+  const corr = [lineKey, ...anchor.c.filter(x => x !== lineKey)];
+  return `<div class="grp-node grp-anchor"><div class="lbl">${escapeHtml(anchor.n)}</div>${corrChipsHtml(corr)}</div>`;
 }
 function renderGroupes(panel, note){
   const g = state.grp;
@@ -2771,18 +2846,25 @@ function renderGroupes(panel, note){
   }
   // active card
   const c = grpCurrent(), total = g.queue.length;
-  // anchor → slots → anchor track
-  const slots = c.stations.map((name, i) => {
-    const cs = g.cardState[i];
-    if(i < g.slot || (g.cardDone && cs.status)){
+  // anchor → slots → anchor track, laid out left→right in the current query direction.
+  // Reveal is driven by each slot's status (not its position), so answering out of order
+  // via grpPick still displays correctly; masked slots are clickable to select them.
+  const order = grpQueryOrder();
+  const node = (i) => {
+    const cs = g.cardState[i], name = c.stations[i];
+    if(cs.status){                                    // answered ('ok') or revealed
       const cls = cs.status === 'ok' ? 'ok' : 'bad';
       return `<div class="grp-node"><div class="grp-slot ${cls}">${escapeHtml(name)}</div></div>`;
     }
     const active = i === g.slot && !g.cardDone;
-    return `<div class="grp-node"><div class="grp-slot ${active?'active':''}">?</div></div>`;
-  });
+    const click = g.cardDone ? '' : ` onclick="grpPick(${i})"`;
+    return `<div class="grp-node"><div class="grp-slot ${active?'active':'pick'}"${click}>?</div></div>`;
+  };
+  const slots = order.map(node);
+  const startAnchor = g.dir < 0 ? c.anchorAfter : c.anchorBefore;
+  const endAnchor   = g.dir < 0 ? c.anchorBefore : c.anchorAfter;
   const arrow = `<span class="grp-arrow">→</span>`;
-  const track = [grpAnchorNode(c.anchorBefore), ...slots, grpAnchorNode(c.anchorAfter)].join(arrow);
+  const track = [grpAnchorNode(startAnchor, c.line), ...slots, grpAnchorNode(endAnchor, c.line)].join(arrow);
 
   let qcardInner;
   if(g.cardDone){
@@ -2790,7 +2872,8 @@ function renderGroupes(panel, note){
     qcardInner = `<div class="feedback ${allClean?'ok':'hint'}" style="font-size:15px">${allClean?'✓ Groupe complété sans faute':'Groupe complété'}</div>
       <div class="row-btn"><button class="btn btn-primary" onclick="grpNext()">${g.pos+1>=total?'Voir le résultat':'Groupe suivant →'}</button></div>`;
   } else {
-    qcardInner = `<div class="qlabel">Station ${g.slot+1} / ${c.stations.length} du groupe — nomme-la</div>
+    const doneCount = g.cardState.filter(cs => cs.status).length;
+    qcardInner = `<div class="qlabel">Station ${doneCount+1} / ${c.stations.length} du groupe — nomme la station surlignée</div>
       <input type="text" id="grpInput" placeholder="Tape le nom de la station" autocomplete="off" autocapitalize="off">
       <div class="row-btn">
         <button class="btn btn-primary" onclick="grpSubmit()">Valider</button>
@@ -2805,10 +2888,10 @@ function renderGroupes(panel, note){
       <span style="font-weight:800;text-transform:uppercase;font-size:12px;letter-spacing:0.05em">${escapeHtml(LINES[c.line].name)}</span>
       <span style="margin-left:auto;color:var(--muted);font-size:12px;font-weight:700">Groupe ${g.pos+1} / ${total}</span>
     </div>
-    <div class="grp-map">${buildGroupMapSvg(c)}</div>
+    <div class="grp-map">${buildGroupMapSvg(c, g)}</div>
     <div class="grp-track">${track}</div>
     <div class="qcard">${qcardInner}</div>`;
-  note.textContent = g.cardDone ? "" : "Nomme les stations surlignées dans l'ordre ; validation auto, fautes de frappe tolérées.";
+  note.textContent = g.cardDone ? "" : "Nomme la station surlignée, ou clique une autre pastille pour la choisir ; validation auto, fautes de frappe tolérées.";
   if(!g.cardDone){
     const inp = document.getElementById("grpInput");
     inp.focus();
