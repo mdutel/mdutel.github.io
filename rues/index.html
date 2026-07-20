@@ -52,6 +52,15 @@
   polygon.reveal,circle.reveal{fill:rgba(184,90,78,.40)!important}
   @keyframes pulse{0%,100%{stroke-opacity:1}50%{stroke-opacity:.25}}
 
+  /* Stations métro/RER — marqueurs neutres, toujours visibles (repère spatial) ET devinables.
+     Rond plein = métro, anneau = RER, rond cerclé = métro+RER. Aucune couleur de ligne. */
+  .station{fill:var(--ink);stroke:var(--paper);stroke-width:1.3;transition:fill .12s,stroke .12s}
+  .station-ring{fill:none;stroke:var(--ink);stroke-width:1.8;transition:stroke .12s}
+  circle.station.hi,circle.station-ring.hi{fill:var(--accent)!important;stroke:var(--accent)!important}
+  circle.station.ok,circle.station-ring.ok{fill:var(--ok)!important;stroke:var(--ok)!important}
+  circle.station.err,circle.station-ring.err{fill:var(--err)!important;stroke:var(--err)!important}
+  circle.station.reveal,circle.station-ring.reveal{fill:var(--err)!important;stroke:var(--err)!important;animation:pulse .6s ease-in-out 3}
+
   /* Panneau */
   .panel{background:var(--panel);color:var(--panel-text);display:flex;flex-direction:column;padding:22px 22px 18px;gap:18px;overflow-y:auto}
   .brand{font:600 13px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;text-transform:uppercase;color:var(--panel-dim);display:flex;align-items:center;justify-content:space-between;gap:10px}
@@ -334,7 +343,7 @@
   function isDue(rec) { return !!rec && rec.box >= 1 && rec.due <= Date.now(); }
   function dueItems(insee) {
     // Portée V1 : uniquement l'arrondissement actuellement chargé (voir HANDOFF.md).
-    return targets.filter(t => isDue(itemRecord(insee, t.name)));
+    return targets.filter(t => isDue(itemRecord(insee, t.key)));
   }
   function dueCount() { return currentInsee ? dueItems(currentInsee).length : 0; }
 
@@ -575,6 +584,12 @@
   const NS = "http://www.w3.org/2000/svg";
   const targets = [];
 
+  // Stations : préfixe de clé de progression (évite la collision avec un axe/POI
+  // homonyme, ex. « Place d'Italie » qui est à la fois une place et une station).
+  const STATION_PREFIX = "Station ";
+  const STATION_NET_LABEL = { metro: "Métro", rer: "RER", both: "Métro + RER" };
+  const STATION_R = 5;   // rayon de hit-test (px) autour du centre de la station
+
   function buildTargets() {
     targets.length = 0;
     // Axes
@@ -588,7 +603,7 @@
           segs.push([pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]]);
       });
       targets.push({
-        kind: "axe", name: a.name, category: a.category, tier: a.tier,
+        kind: "axe", name: a.name, key: a.name, category: a.category, tier: a.tier,
         quartier: axeQuartierLL(a.geometry, a.center), polylines, segs, els: [],
         dist(px, py) {
           let d = Infinity;
@@ -603,7 +618,7 @@
       if (p.shape === "contour" && p.geometry) {
         const rings = polyRings(p.geometry).map(r => r.map(project));
         targets.push({
-          kind: "poi", name: p.name, category: p.category, tier: "A",
+          kind: "poi", name: p.name, key: p.name, category: p.category, tier: "A",
           quartier: quartierOfPointLL(p.center), rings, center: c, els: [],
           dist(px, py) {
             for (const r of this.rings) if (pointInRing(px, py, r)) return 0;
@@ -615,11 +630,24 @@
       } else {
         const r = Math.max(7, p.radius_m * pxPerMeter);
         targets.push({
-          kind: "poi", name: p.name, category: p.category, tier: "A",
+          kind: "poi", name: p.name, key: p.name, category: p.category, tier: "A",
           quartier: quartierOfPointLL(p.center), circle: { x: c[0], y: c[1], r }, center: c, els: [],
           dist(px, py) { return Math.max(0, Math.hypot(px - this.circle.x, py - this.circle.y) - this.circle.r); }
         });
       }
+    });
+    // Stations métro/RER — points (repère spatial toujours visible + cibles devinables).
+    // Clé de progression préfixée pour ne pas entrer en collision avec un axe/POI homonyme.
+    (DATA.stations || []).forEach(s => {
+      const c = project(s.coord);
+      targets.push({
+        kind: "station", name: s.name, key: STATION_PREFIX + s.name,
+        category: STATION_NET_LABEL[s.network] || "Métro", tier: "A",
+        network: s.network, lines: s.lines || [],
+        quartier: quartierOfPointLL(s.coord), center: c, els: [],
+        marker: { x: c[0], y: c[1] },
+        dist(px, py) { return Math.max(0, Math.hypot(px - this.marker.x, py - this.marker.y) - STATION_R); }
+      });
     });
   }
 
@@ -652,6 +680,7 @@
     svg.appendChild(gQuartiers);
     const gAxesB = el("g", {}), gAxesA = el("g", {}), gPoi = el("g", {}), gCircle = el("g", {});
     targets.forEach(t => {
+      if (t.kind === "station") return;   // stations rendues plus bas dans leur propre groupe
       if (t.kind === "axe") {
         const g = t.tier === "A" ? gAxesA : gAxesB;
         t.polylines.forEach(pts => {
@@ -675,6 +704,24 @@
       }
     });
     svg.appendChild(gAxesB); svg.appendChild(gAxesA); svg.appendChild(gPoi); svg.appendChild(gCircle);
+    // Stations : marqueurs neutres au-dessus de tout (repère spatial + cible cliquable).
+    const gStation = el("g", {});
+    targets.forEach(t => {
+      if (t.kind !== "station") return;
+      const x = t.marker.x.toFixed(1), y = t.marker.y.toFixed(1);
+      if (t.network === "rer") {
+        const ring = el("circle", { cx: x, cy: y, r: 5, class: "station-ring" });
+        gStation.appendChild(ring); t.els.push(ring);
+      } else if (t.network === "both") {
+        const ring = el("circle", { cx: x, cy: y, r: 6, class: "station-ring" });
+        const dot = el("circle", { cx: x, cy: y, r: 2.6, class: "station" });
+        gStation.appendChild(ring); gStation.appendChild(dot); t.els.push(ring, dot);
+      } else {
+        const dot = el("circle", { cx: x, cy: y, r: 4.2, class: "station" });
+        gStation.appendChild(dot); t.els.push(dot);
+      }
+    });
+    svg.appendChild(gStation);
   }
 
   function setClass(t, cls) { t.els.forEach(e => { e.setAttribute("class", e.getAttribute("class").replace(/ (hi|ok|err|reveal)/g, "") + (cls ? " " + cls : "")); }); }
@@ -737,7 +784,7 @@
     const pn = document.getElementById("prompt-name");
     const pc = document.getElementById("prompt-cat");
     if (!t) { pk.textContent = "Rien à réviser"; pn.textContent = "Tout est masqué ou vide"; pc.textContent = ""; return; }
-    pk.textContent = t.kind === "axe" ? "Pointez la voie" : "Pointez le lieu";
+    pk.textContent = t.kind === "axe" ? "Pointez la voie" : t.kind === "station" ? "Pointez la station" : "Pointez le lieu";
     pn.textContent = t.name;
     pc.textContent = t.category;
   }
@@ -832,6 +879,7 @@
       const names = new Set();
       data.axes.forEach(a => names.add(a.name));
       data.pois.forEach(p => names.add(p.name));
+      (data.stations || []).forEach(s => names.add(STATION_PREFIX + s.name));
       arrNamesCache[insee] = { total: names.size, names };
       purgeStale(insee, names);   // nettoyage résiduel : fait une seule fois, au premier chargement des noms
       cb(arrNamesCache[insee]);
@@ -1000,7 +1048,7 @@
     // doGrade === false : la note a déjà été posée (indice déjà utilisé) — on ne fait que révéler.
     if (doGrade === undefined) doGrade = true;
     busy = true; clearHi();
-    if (doGrade) { applyGrade(currentInsee, target.name, "miss"); roundMistakes.push(target); }
+    if (doGrade) { applyGrade(currentInsee, target.key, "miss"); roundMistakes.push(target); }
     target._sess = "err";
     setClass(target, "reveal");   // pulse rouge pour révéler l'emplacement, puis rouge fixe
     setMsg(reason === "idk" ? "C’était : " + target.name : "Raté. C’était : " + target.name, "err");
@@ -1025,7 +1073,7 @@
         const cur = current;
         setTimeout(() => { setClass(cur, sessionClassOf(cur)); qi++; busy = false; hi = []; next(); }, 750);
       } else {
-        found++; applyGrade(currentInsee, current.name, "clean");
+        found++; applyGrade(currentInsee, current.key, "clean");
         current._sess = "ok";
         hi.forEach(t => { if (t !== current) setClass(t, sessionClassOf(t)); });
         setClass(current, "ok"); setMsg("Trouvé.", "ok"); updateCounters();
@@ -1047,7 +1095,7 @@
     if (!current.quartier) return;                 // pas de donnée quartier → pas d'indice
     hinted = true;
     document.getElementById("hint").disabled = true;
-    applyGrade(currentInsee, current.name, "miss");
+    applyGrade(currentInsee, current.key, "miss");
     roundMistakes.push(current);
     showQuartierHint(current);
     setMsg("Indice — quartier : " + current.quartier + ". À vous de situer la cible.", "hint");
@@ -1108,11 +1156,12 @@
   // ---------- Compteurs ----------
   const AXE_CATS = ["Boulevard", "Avenue", "Rue", "Place", "Quai", "Pont"];
   const POI_CATS = ["Quartiers", "Parcs", "Piscines", "Sport", "Cinémas", "Culture & institutions", "Commerces", "Transport", "Santé"];
+  const STATION_CATS = ["Métro", "RER", "Métro + RER"];
   function updateCounters() {
     const pool = activePool();
     const box = document.getElementById("counters");
     box.innerHTML = "";
-    const groups = [["Voies", AXE_CATS, "axe"], ["Lieux", POI_CATS, "poi"]];
+    const groups = [["Voies", AXE_CATS, "axe"], ["Lieux", POI_CATS, "poi"], ["Réseau", STATION_CATS, "station"]];
     groups.forEach(([label, cats, kind]) => {
       const head = document.createElement("div"); head.className = "cnt-head"; head.textContent = label; box.appendChild(head);
       cats.forEach(cat => {
