@@ -399,6 +399,29 @@
   .done-screen{ text-align:center; padding: 20px 8px; }
   .done-screen .big{ font-size:34px; font-weight:800; margin:6px 0; }
   .note{ font-size:12px; color:#8d8d85; line-height:1.5; margin-top:14px; }
+
+  /* "Itinéraire" view — routing exam (from A to B: which line / direction / where to change) */
+  .itin-map{ margin:6px 0 14px; }
+  .itin-prompt{ font-size:16px; line-height:1.6; }
+  .itin-prompt .ep{ font-weight:800; }
+  .itin-prompt .line-badge{ margin:0 1px; vertical-align:middle; }
+  .itin-ask{ color:var(--muted); font-size:13px; margin-top:8px; }
+  .itin-legend{ display:flex; gap:16px; font-size:12px; color:var(--muted); margin:8px 0 0; flex-wrap:wrap; }
+  .itin-legend .sw{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:middle; }
+  .itin-route{ margin-top:4px; }
+  .itin-route + .itin-route{ margin-top:20px; border-top:1px dashed #d8d4c4; padding-top:16px; }
+  .itin-route-tag{ font-size:11px; text-transform:uppercase; letter-spacing:0.06em; font-weight:800; color:var(--muted); margin-bottom:10px; }
+  .itin-node{ display:flex; align-items:center; gap:8px; font-size:14px; }
+  .itin-node .itin-dot{ width:12px; height:12px; border-radius:50%; flex:0 0 auto; }
+  .itin-node.start .itin-dot{ background:var(--ok); }
+  .itin-node.change .itin-dot{ background:var(--review); }
+  .itin-node.end .itin-dot{ background:var(--bad); }
+  .itin-node .role{ font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); font-weight:700; }
+  .itin-seg{ margin:2px 0 2px 5px; padding:8px 0 8px 18px; border-left:3px solid #ccc; }
+  .itin-seg .hd{ display:flex; align-items:center; gap:8px; font-weight:700; font-size:14px; flex-wrap:wrap; }
+  .itin-seg .dir{ font-weight:800; }
+  .itin-seg .meta{ color:var(--muted); font-weight:700; font-size:12px; }
+  .itin-seg .stops{ color:var(--muted); font-size:12px; margin-top:5px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -1077,6 +1100,7 @@ function setScope(sc){
   if(!demoMode){ try{ localStorage.setItem(SCOPE_LS_KEY, sc); }catch(e){ /* no-op if blocked */ } }
   resetLine();   // the active station set changed → rebuild the current session
   if(state.view === "groupes") startGroupes();  // group set is scope-specific
+  if(state.view === "itineraire") startItineraire();  // graph + pairs are scope-specific
   render();
 }
 
@@ -1396,6 +1420,7 @@ let state = {
   mapLineStyle: "none", // carte: hint level for other lines' routes — "none" | "gray" | "color"
   mapShowStops: false, // carte: show station dot markers along the hint lines
   scope: "full",       // "full" | "intramuros" — network extent (see isExcluded)
+  itin: null,          // itinéraire (final-exam) session {from,to,routes,revealed} — never scored
   feedback: null
 };
 
@@ -1518,6 +1543,7 @@ function goView(v){
   state.view = v;
   if(v === "review") startReview();
   if(v === "groupes") startGroupes();
+  if(v === "itineraire") startItineraire();
   render();
 }
 
@@ -1815,6 +1841,319 @@ function grpFinish(){
 // push "3bis"/"7bis" to the very end.
 const LINE_ORDER = ["1","2","3","3bis","4","5","6","7","7bis","8","9","10","11","12","13","14"];
 
+/* ================= « Itinéraire » — the final exam (from A to B: how?) =================
+   A routing quiz, unlike every other mode: instead of recalling a fixed fact (a
+   station's name or position), it exercises the network *as a graph* — which line,
+   which direction, where to change. Self-assessed (reveal), never scored, never fed
+   into the SRS schedule (a deliberate v1 choice) — nothing here writes to STORE.
+
+   The transit graph is rebuilt from name-coincidence across the 16 lines' sequences,
+   NOT from the correspondance `c` arrays: a real in-station interchange is always the
+   same-named station appearing in several lines' sequences, so the graph reconstructs
+   itself and stays immune to the two known `c` data errors (line 4/5's phantom "2" at
+   Gare du Nord, line 9's phantom "14" at Saint-Augustin) — a phantom `c` code makes no
+   edge because the other line has no such node. Metro only (RER/tram are display chips,
+   not routable). Loop arcs (10, 7bis) are one-way, so their edges are DIRECTED (south
+   arc west→east, north arc east→west); everything else is bidirectional. Excluded
+   (intramuros) tails are dropped, which keeps the in-Paris core connected since
+   exclusions are always contiguous tails. */
+
+let _transitGraphCache = {};
+function transitGraph(scope){
+  return _transitGraphCache[scope] || (_transitGraphCache[scope] = buildTransitGraph(scope));
+}
+function buildTransitGraph(scope){
+  const adj = new Map();       // name -> [{to, line}]   (directed)
+  const linesAt = new Map();   // name -> Set(line)
+  const node = n => { if(!adj.has(n)){ adj.set(n, []); linesAt.set(n, new Set()); } };
+  const excl = (lk, n) => scope === 'intramuros' && LINES[lk].exclude && LINES[lk].exclude.has(n);
+  // dedupe: a forked line's trunk is walked once per branch chain (trunk+A, trunk+B), so
+  // the same trunk edge is offered twice. Left duplicated it would make legTerminus (which
+  // enumerates simple paths) branch 2× at every trunk step → exponential. Keep edges unique.
+  const edge = (a, b, line) => {
+    node(a); node(b);
+    const list = adj.get(a);
+    if(!list.some(e => e.to === b && e.line === line)) list.push({to:b, line});
+    linesAt.get(a).add(line); linesAt.get(b).add(line);
+  };
+  const chainBidir = (chain, line) => {
+    for(let i=0;i<chain.length-1;i++){
+      const a=chain[i].n, b=chain[i+1].n;
+      if(excl(line,a)||excl(line,b)) continue;
+      edge(a,b,line); edge(b,a,line);
+    }
+  };
+  const chainDir = (chain, line) => {   // forward edges only (loop arcs)
+    for(let i=0;i<chain.length-1;i++){
+      const a=chain[i].n, b=chain[i+1].n;
+      if(excl(line,a)||excl(line,b)) continue;
+      edge(a,b,line);
+    }
+  };
+  LINE_ORDER.forEach(line => {
+    const L = LINES[line];
+    if(L.loop){
+      chainBidir(L.westTrunk, line);
+      chainBidir(L.eastTrunk, line);
+      const wLast = L.westTrunk[L.westTrunk.length-1], eFirst = L.eastTrunk[0];
+      chainDir([wLast].concat(L.loopSouth, [eFirst]), line);                       // south arc: west→east
+      chainDir([wLast].concat(L.loopNorth, [eFirst]).reverse(), line);             // north arc: east→west
+    } else if(L.branches){
+      lineMapSegments(line).forEach(ch => chainBidir(ch, line));                    // trunk+A, trunk+B
+    } else {
+      chainBidir(lineAllStations(line), line);
+    }
+  });
+  return {adj, linesAt};
+}
+
+// physical termini of a line (used to label a leg's direction)
+function lineTermini(line){
+  const L = LINES[line];
+  if(L.loop) return [L.westTrunk[0].n, L.eastTrunk[L.eastTrunk.length-1].n];
+  if(L.branches) return [L.trunk[0].n, L.branches.A.terminus, L.branches.B.terminus];
+  return [L.stations[0].n, L.stations[L.stations.length-1].n];
+}
+
+// Dijkstra over (station, arrival-line) states. Lexicographic cost:
+// preferHops=false → (changes, then stations); preferHops=true → (stations, then changes).
+// Returns {legs:[{line,board,alight,stops}], changes, hops} or null. '\t' can't occur in a
+// station name, so it's a safe key separator.
+function computeRoute(scope, from, to, preferHops){
+  const {adj} = transitGraph(scope);
+  if(!adj.has(from) || !adj.has(to) || from === to) return null;
+  const BIG = 100000;
+  const cost = (ch, hp) => preferHops ? hp*BIG + ch : ch*BIG + hp;
+  const dist = new Map(), prev = new Map(), chd = new Map(), hpd = new Map();
+  const start = from + '\t';
+  dist.set(start, 0); chd.set(start, 0); hpd.set(start, 0);
+  const pq = [{key:start, name:from, line:'', c:0}];
+  const done = new Set();
+  while(pq.length){
+    let mi=0; for(let i=1;i<pq.length;i++) if(pq[i].c < pq[mi].c) mi=i;
+    const cur = pq.splice(mi,1)[0];
+    if(done.has(cur.key)) continue;
+    done.add(cur.key);
+    for(const e of (adj.get(cur.name) || [])){
+      const nch = chd.get(cur.key) + (cur.line && e.line !== cur.line ? 1 : 0);
+      const nhp = hpd.get(cur.key) + 1;
+      const nkey = e.to + '\t' + e.line;
+      const nc = cost(nch, nhp);
+      if(!dist.has(nkey) || nc < dist.get(nkey)){
+        dist.set(nkey, nc); chd.set(nkey, nch); hpd.set(nkey, nhp);
+        prev.set(nkey, {pkey:cur.key, to:e.to, line:e.line});
+        pq.push({key:nkey, name:e.to, line:e.line, c:nc});
+      }
+    }
+  }
+  let bestKey=null, bestC=Infinity;
+  for(const [key, c] of dist){
+    if(key.slice(0, key.indexOf('\t')) === to && c < bestC){ bestC=c; bestKey=key; }
+  }
+  if(bestKey === null) return null;
+  const seq = [];
+  let k = bestKey;
+  while(prev.has(k)){ const p = prev.get(k); seq.push({to:p.to, line:p.line}); k = p.pkey; }
+  seq.reverse();
+  if(!seq.length) return null;
+  const path = [from].concat(seq.map(e=>e.to));
+  const lineSeq = seq.map(e=>e.line);
+  const legs = [];
+  let i=0;
+  while(i < lineSeq.length){
+    let j=i; while(j+1 < lineSeq.length && lineSeq[j+1] === lineSeq[i]) j++;
+    legs.push({line:lineSeq[i], board:path[i], alight:path[j+1], stops:path.slice(i, j+2)});
+    i = j+1;
+  }
+  return {legs, changes: chd.get(bestKey), hops: hpd.get(bestKey)};
+}
+
+// terminus (direction) label for a leg: follow the line forward past the alight, away
+// from where we came, until a real terminus. A fork branches → both branch termini
+// ("… ou …"); a loop can cycle → fall back to the end in travel order. Always walked on
+// the FULL graph, never the scoped one: a platform's direction sign shows the real
+// terminus regardless of the learner's intramuros scope (e.g. line 13 north is signed
+// "Asnières…" even when that tail is out of the intramuros set), and walking the scoped
+// graph would dead-end at an in-scope station that is not a real terminus.
+function legTerminus(scope, line, stops){
+  const {adj} = transitGraph('full');
+  const valid = new Set(lineTermini(line));
+  const out = new Set();
+  const walk = (prev, cur, visited) => {
+    const fwd = (adj.get(cur) || [])
+      .filter(e => e.line === line && e.to !== prev && !visited.has(e.to))
+      .map(e => e.to);
+    if(!fwd.length){ out.add(cur); return; }
+    fwd.forEach(n => walk(cur, n, new Set(visited).add(n)));
+  };
+  walk(stops[stops.length-2], stops[stops.length-1], new Set(stops));
+  const real = [...out].filter(n => valid.has(n));
+  if(real.length) return real;
+  const all = lineAllStations(line).map(s=>s.n);   // loop fallback (rare): end in travel sense
+  const forward = all.indexOf(stops[stops.length-1]) >= all.indexOf(stops[0]);
+  const L = LINES[line];
+  const west = L.westTrunk ? L.westTrunk[0].n : all[0];
+  const east = L.eastTrunk ? L.eastTrunk[L.eastTrunk.length-1].n : all[all.length-1];
+  return [forward ? east : west];
+}
+
+// draw a fresh A→B pair: distinct, in scope, requiring ≥1 change, and routable.
+function drawItinPair(scope){
+  const g = transitGraph(scope);
+  const pool = [...g.adj.keys()].filter(n => GEO.stations[n]);
+  if(pool.length < 2) return null;
+  for(let tries=0; tries<600; tries++){
+    const a = pool[Math.floor(Math.random()*pool.length)];
+    const b = pool[Math.floor(Math.random()*pool.length)];
+    if(a === b) continue;
+    const la = g.linesAt.get(a), lb = g.linesAt.get(b);
+    let shares = false; la.forEach(x => { if(lb.has(x)) shares = true; });
+    if(shares) continue;                       // share a line → 0-change trip → reject
+    const r = computeRoute(scope, a, b, false);
+    if(r && r.changes >= 1) return {from:a, to:b};
+  }
+  return null;
+}
+
+// primary route = fewest changes; alternative = fewest stations, only shown when it is
+// genuinely shorter (a real trade-off, e.g. one more change to save stations).
+function buildItinRoutes(scope, from, to){
+  const simplest = computeRoute(scope, from, to, false);
+  const shortest = computeRoute(scope, from, to, true);
+  const routes = [];
+  if(simplest){
+    simplest.kind = 'simplest';
+    simplest.legs.forEach(lg => lg.dir = legTerminus(scope, lg.line, lg.stops));
+    routes.push(simplest);
+  }
+  if(shortest && simplest && shortest.hops < simplest.hops){
+    shortest.kind = 'shortest';
+    shortest.legs.forEach(lg => lg.dir = legTerminus(scope, lg.line, lg.stops));
+    routes.push(shortest);
+  }
+  return routes;
+}
+
+function startItineraire(){
+  const pair = drawItinPair(state.scope);
+  if(!pair){ state.itin = {empty:true}; return; }
+  state.itin = {from:pair.from, to:pair.to, routes:buildItinRoutes(state.scope, pair.from, pair.to), revealed:false};
+}
+function itinReveal(){ if(state.itin && !state.itin.empty){ state.itin.revealed = true; render(); } }
+function itinNext(){ startItineraire(); render(); }
+
+// mini Paris map for the itinerary: faint network in grey; before reveal only the two
+// endpoints (green départ / red arrivée); after reveal the primary route drawn leg by
+// leg in line colour with change points ringed. viewBox = Paris frame, expanded to hold
+// every marked point (far-suburban endpoints in "Complet" stay on-canvas).
+function buildItinMapSvg(it){
+  const revealed = it.revealed;
+  const marks = [it.from, it.to];
+  const route = revealed && it.routes[0] ? it.routes[0] : null;
+  if(route) route.legs.forEach(lg => lg.stops.forEach(n => marks.push(n)));
+  const pb = MAP.parisBox;
+  let minx=pb.x, miny=pb.y, maxx=pb.x+pb.w, maxy=pb.y+pb.h;
+  marks.forEach(n => { const p=GEO.stations[n]; if(!p) return; const [x,y]=MAP.project(p[0],p[1]);
+    minx=Math.min(minx,x); miny=Math.min(miny,y); maxx=Math.max(maxx,x); maxy=Math.max(maxy,y); });
+  const pad=16, vb={x:minx-pad, y:miny-pad, w:(maxx-minx)+2*pad, h:(maxy-miny)+2*pad};
+  let s = `<svg viewBox="${_f(vb.x)} ${_f(vb.y)} ${_f(vb.w)} ${_f(vb.h)}" style="width:100%;max-height:400px;height:auto;display:block;background:#f3f1e8;border-radius:8px">`;
+  s += `<g style="pointer-events:none">` + GEO.water.map(r=>`<path d="${ringPath(r)}" fill="#cfe0ee" stroke="none"/>`).join('') + `</g>`;
+  s += `<g style="pointer-events:none" fill="none" stroke="#d9d3c2" stroke-width="1">` + GEO.arr.map(a=>`<path d="${ringPath(a.ring)}"/>`).join('') + `</g>`;
+  // whole network, neutral grey
+  s += `<g style="pointer-events:none" fill="none" stroke="#bdb7a8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">`
+     + LINE_ORDER.map(lk => lineMapSegments(lk).map(seg => `<path d="${chainPath(mapSegStations(lk, seg))}"/>`).join('')).join('') + `</g>`;
+  // revealed: the primary route, leg by leg in line colour
+  if(route){
+    s += `<g style="pointer-events:none" fill="none" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">`
+       + route.legs.map(lg => `<path d="${chainPath(lg.stops.map(n=>({n})))}" stroke="${LINES[lg.line].color}"/>`).join('') + `</g>`;
+    s += `<g style="pointer-events:none">` + route.legs.slice(1).map(lg => {   // change points
+      const p = GEO.stations[lg.board]; if(!p) return '';
+      const [x,y] = MAP.project(p[0], p[1]);
+      return `<circle cx="${_f(x)}" cy="${_f(y)}" r="5" fill="#fff" stroke="#14140f" stroke-width="2.2"/>`;
+    }).join('') + `</g>`;
+  }
+  // endpoints on top, labelled
+  const endpoint = (name, fill, label) => {
+    const p = GEO.stations[name]; if(!p) return '';
+    const [x,y] = MAP.project(p[0], p[1]);
+    return `<circle cx="${_f(x)}" cy="${_f(y)}" r="6.5" fill="${fill}" stroke="#fff" stroke-width="2"/>`
+      + `<text x="${_f(x+9)}" y="${_f(y+4)}" font-size="11.5" font-weight="800" fill="#14140f" paint-order="stroke" stroke="#f3f1e8" stroke-width="3" stroke-linejoin="round">${escapeHtml(label)}</text>`;
+  };
+  s += `<g style="pointer-events:none;user-select:none">` + endpoint(it.from, 'var(--ok)', it.from) + endpoint(it.to, 'var(--bad)', it.to) + `</g>`;
+  s += `</svg>`;
+  return s;
+}
+
+function itinRouteHtml(scope, route, tag){
+  const dirLabel = lg => (lg.dir && lg.dir.length ? lg.dir.map(escapeHtml).join(' <span style="color:var(--muted)">ou</span> ') : '');
+  const node = (role, name, cls) => `<div class="itin-node ${cls}"><span class="itin-dot"></span><span class="role">${role}</span>&nbsp;<b>${escapeHtml(name)}</b></div>`;
+  const seg = lg => {
+    const inter = lg.stops.slice(1, -1);
+    const n = lg.stops.length - 1;
+    return `<div class="itin-seg" style="border-left-color:${LINES[lg.line].color}">
+      <div class="hd">${lineBadge(lg.line)} <span>${escapeHtml(LINES[lg.line].name)}</span> · <span class="dir">direction ${dirLabel(lg)}</span>
+        <span class="meta">— ${n} station${n>1?'s':''}</span></div>
+      ${inter.length ? `<div class="stops">${inter.map(escapeHtml).join(' · ')}</div>` : ''}
+    </div>`;
+  };
+  let rows = node('Départ', route.legs[0].board, 'start');
+  route.legs.forEach((lg, idx) => {
+    rows += seg(lg);
+    if(idx < route.legs.length - 1) rows += node('Changement', lg.alight, 'change');
+  });
+  rows += node('Arrivée', route.legs[route.legs.length-1].alight, 'end');
+  return `<div class="itin-route"><div class="itin-route-tag">${tag}</div>${rows}</div>`;
+}
+
+function renderItineraire(panel, note){
+  const it = state.itin;
+  const backTrain = `<button class="btn btn-secondary" onclick="goView('train')">Entraînement</button>`;
+  if(!it || it.empty){
+    panel.innerHTML = `<div class="done-screen">
+      <div class="big" style="font-size:22px">Pas assez de stations dans ce périmètre</div>
+      <div style="color:var(--muted);font-size:14px;margin-top:8px">Impossible de tirer un trajet demandant un changement. ${state.scope==='intramuros'?'Essaie le périmètre « Complet ».':''}</div>
+      <div style="margin-top:18px">${backTrain}</div></div>`;
+    note.textContent = "";
+    return;
+  }
+  const scope = state.scope;
+  if(!it.revealed){
+    panel.innerHTML = `
+      <div class="itin-prompt">Tu es à <span class="ep">${escapeHtml(it.from)}</span>
+        <br>tu veux rejoindre <span class="ep">${escapeHtml(it.to)}</span></div>
+      <div class="itin-ask">Quelle ligne prends-tu, dans quel sens, et où changes-tu ? Formule ton trajet, puis révèle.</div>
+      <div class="itin-legend"><span><span class="sw" style="background:var(--ok)"></span>Départ</span><span><span class="sw" style="background:var(--bad)"></span>Arrivée</span></div>
+      <div class="itin-map">${buildItinMapSvg(it)}</div>
+      <div class="row-btn">
+        <button class="btn btn-primary" onclick="itinReveal()">Révéler l'itinéraire</button>
+        <button class="btn btn-secondary" onclick="itinNext()">Passer</button>
+      </div>`;
+    note.textContent = "Examen final : situe le départ et l'arrivée, construis l'itinéraire de tête. Ce mode n'affecte pas tes statistiques.";
+    return;
+  }
+  // revealed
+  let routesHtml = "";
+  if(!it.routes.length){
+    routesHtml = `<div class="itin-ask">Aucun itinéraire trouvé (anomalie de données).</div>`;
+  } else {
+    const r0 = it.routes[0];
+    routesHtml += itinRouteHtml(scope, r0, `Le plus simple — ${r0.changes} changement${r0.changes>1?'s':''}, ${r0.hops} stations`);
+    if(it.routes[1]){
+      const r1 = it.routes[1];
+      routesHtml += itinRouteHtml(scope, r1, `Le plus court — ${r1.hops} stations, ${r1.changes} changement${r1.changes>1?'s':''}`);
+    }
+  }
+  panel.innerHTML = `
+    <div class="itin-prompt"><span class="ep">${escapeHtml(it.from)}</span> <span style="color:var(--muted)">→</span> <span class="ep">${escapeHtml(it.to)}</span></div>
+    <div class="itin-map">${buildItinMapSvg(it)}</div>
+    ${routesHtml}
+    <div class="row-btn">
+      <button class="btn btn-primary" onclick="itinNext()">Nouvelle question →</button>
+      ${backTrain}
+    </div>`;
+  note.textContent = "Compare avec ce que tu avais en tête. Le tracé coloré montre l'itinéraire le plus simple ; les points cerclés sont les changements.";
+}
+
 function renderTabs(){
   const tabs = document.getElementById("tabs");
   tabs.innerHTML = "";
@@ -1880,6 +2219,7 @@ function renderNav(){
     `<button class="nav-btn ${state.view==='train'?'active':''}" onclick="goView('train')">Entraînement</button>` +
     `<button class="nav-btn review ${state.view==='review'?'active':''}" ${dueCount===0?'disabled':''} onclick="goView('review')">À réviser · ${dueCount}</button>` +
     `<button class="nav-btn ${state.view==='groupes'?'active':''}" title="S'entraîner sur les suites de stations sans correspondance, groupe par groupe, avec repère géographique." onclick="goView('groupes')">Groupes · ${groupCards(state.scope).length}</button>` +
+    `<button class="nav-btn ${state.view==='itineraire'?'active':''}" title="Examen final : « je suis là, je vais là, comment ? » — quelle ligne, quel sens, où changer. Non compté dans les stats." onclick="goView('itineraire')">Itinéraire</button>` +
     `<button class="nav-btn ${state.view==='stats'?'active':''}" onclick="goView('stats')">Stats</button>` +
     `<button class="nav-btn ${state.view==='history'?'active':''}" onclick="goView('history')">Historique</button>` +
     `<button class="nav-btn ${state.view==='solutions'?'active':''}" onclick="goView('solutions')">Solutions</button>` +
@@ -2222,6 +2562,7 @@ function render(){
   // route to the active view
   if(state.view === "review"){ chrome.style.display = "none"; renderReview(panel, note); return; }
   if(state.view === "groupes"){ chrome.style.display = "none"; renderGroupes(panel, note); return; }
+  if(state.view === "itineraire"){ chrome.style.display = "none"; renderItineraire(panel, note); return; }
   if(state.view === "history"){ chrome.style.display = "none"; renderHistory(panel, note); return; }
   if(state.view === "stats"){ chrome.style.display = "none"; renderStats(panel, note); return; }
   if(state.view === "solutions"){
